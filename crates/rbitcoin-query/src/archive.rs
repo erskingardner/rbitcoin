@@ -585,6 +585,61 @@ pub fn create_pin_approx_bytes(pin: &CreatePin) -> usize {
     n
 }
 
+/// Packed row of each planned create id.
+///
+/// One contiguous id run is the IBD shape, and the row is `id - first`. A
+/// null fk, a gap, a repeat, or ids out of order keep the map, so an id
+/// outside the run does not land on a neighbor's row.
+#[doc(hidden)]
+pub enum PlannedRows {
+    Run { first: u64, len: u64 },
+    Map(crate::U64Map<usize>),
+}
+
+impl PlannedRows {
+    pub fn from_fks(fks: &[Fk]) -> Self {
+        if let Some(first) = contiguous_run_first(fks) {
+            return Self::Run {
+                first,
+                len: fks.len() as u64,
+            };
+        }
+        let mut rows = crate::U64Map::with_capacity_and_hasher(fks.len(), Default::default());
+        for (i, fk) in fks.iter().enumerate() {
+            if let Some(id) = fk.get() {
+                rows.insert(id, i);
+            }
+        }
+        Self::Map(rows)
+    }
+
+    #[inline]
+    pub fn row(&self, create_id: u64) -> Option<usize> {
+        match self {
+            Self::Run { first, len } => create_id
+                .checked_sub(*first)
+                .filter(|i| i < len)
+                .map(|i| i as usize),
+            Self::Map(rows) => rows.get(&create_id).copied(),
+        }
+    }
+}
+
+/// The first id when `fks` is `first, first + 1, …` with no null fk.
+fn contiguous_run_first(fks: &[Fk]) -> Option<u64> {
+    let mut ids = fks.iter().map(|fk| fk.get());
+    let first = ids.next()??;
+    let mut prev = first;
+    for id in ids {
+        let next = prev.checked_add(1)?;
+        if id != Some(next) {
+            return None;
+        }
+        prev = next;
+    }
+    Some(first)
+}
+
 /// Write-ready plan batch from lookup/load to commit (writer).
 ///
 /// Planned create fks match `txs.count()+1…` at plan time; commit fails if the
@@ -718,7 +773,7 @@ impl ArchiveWritePlan {
         }
     }
 
-    /// Per-packed-row `(vout, spend_fk)` for creates in this plan (Class A overlay).
+    /// Per-packed-row `(vout, spend_fk, vin)` for creates in this plan (Class A overlay).
     ///
     /// Coinbase / external parents are omitted — those slots stay zero until
     /// annotate after tip.
@@ -727,18 +782,10 @@ impl ArchiveWritePlan {
         if overlay.is_empty() {
             return overlay;
         }
-        let mut idx: crate::U64Map<usize> = crate::U64Map::default();
-        for (i, fk) in self.planned_fks.iter().enumerate() {
-            if let Some(id) = fk.get() {
-                idx.insert(id, i);
-            }
-        }
+        let rows = PlannedRows::from_fks(&self.planned_fks);
         for eds in self.edges.values() {
             for e in eds {
-                let Some(cid) = e.create_fk.get() else {
-                    continue;
-                };
-                let Some(&i) = idx.get(&cid) else {
+                let Some(i) = e.create_fk.get().and_then(|cid| rows.row(cid)) else {
                     continue;
                 };
                 overlay[i].push((e.vout, e.spend_fk, e.vin));
@@ -1131,13 +1178,8 @@ pub fn stamp_wire_plan_txstat(
     if plan.packed.is_empty() {
         return Ok(());
     }
-    let mut idx: crate::U64Map<usize> = crate::U64Map::default();
-    for (i, fk) in plan.planned_fks.iter().enumerate() {
-        if let Some(id) = fk.get() {
-            idx.insert(id, i);
-        }
-    }
-    let vals = store_prevout_values(query, plan, &idx)?;
+    let rows = PlannedRows::from_fks(&plan.planned_fks);
+    let vals = store_prevout_values(query, plan, &rows)?;
     let mut fees = Vec::with_capacity(plan.packed.len());
     let mut sizes = Vec::with_capacity(plan.packed.len());
     for i in 0..plan.packed.len() {
@@ -1150,7 +1192,7 @@ pub fn stamp_wire_plan_txstat(
         let in_sum = if is_cb {
             None
         } else {
-            Some(txstat_in_sum(plan, &idx, &vals, i, n_in)?)
+            Some(txstat_in_sum(plan, &rows, &vals, i, n_in)?)
         };
         let row = plan.packed[i]
             .0
@@ -1175,7 +1217,7 @@ pub fn stamp_wire_plan_txstat(
 pub fn store_prevout_values(
     query: &Query,
     plan: &ArchiveWritePlan,
-    idx: &crate::U64Map<usize>,
+    rows: &PlannedRows,
 ) -> Result<std::collections::HashMap<(u64, u32), u64>, QueryError> {
     let mut by_parent: std::collections::HashMap<u64, Vec<u32>> = std::collections::HashMap::new();
     for fk in &plan.planned_fks {
@@ -1189,7 +1231,7 @@ pub fn store_prevout_values(
             let Some(cid) = e.create_fk.get() else {
                 continue;
             };
-            if idx.get(&cid).is_some() {
+            if rows.row(cid).is_some() {
                 continue;
             }
             by_parent.entry(cid).or_default().push(e.vout);
@@ -1209,7 +1251,7 @@ pub fn store_prevout_values(
 #[doc(hidden)]
 pub fn txstat_in_sum(
     plan: &ArchiveWritePlan,
-    idx: &crate::U64Map<usize>,
+    rows: &PlannedRows,
     vals: &std::collections::HashMap<(u64, u32), u64>,
     i: usize,
     n_in: usize,
@@ -1231,7 +1273,7 @@ pub fn txstat_in_sum(
         if e.create_fk.is_null() {
             return Err(StoreError::Corrupt("invariant: spend missing create_fk"));
         }
-        let val = prevout_value_at(plan, idx, vals, e.create_fk, e.vout)?;
+        let val = prevout_value_at(plan, rows, vals, e.create_fk, e.vout)?;
         in_sum = in_sum
             .checked_add(val)
             .ok_or(StoreError::Corrupt("txstat in_sum overflow"))?;
@@ -1244,7 +1286,7 @@ pub fn txstat_in_sum(
 #[doc(hidden)]
 pub fn prevout_value_at(
     plan: &ArchiveWritePlan,
-    idx: &crate::U64Map<usize>,
+    rows: &PlannedRows,
     vals: &std::collections::HashMap<(u64, u32), u64>,
     create_fk: Fk,
     vout: u32,
@@ -1252,7 +1294,7 @@ pub fn prevout_value_at(
     let Some(cid) = create_fk.get() else {
         return Err(StoreError::Corrupt("invariant: spend missing create_fk"));
     };
-    if let Some(&i) = idx.get(&cid) {
+    if let Some(i) = rows.row(cid) {
         let val = plan.packed[i]
             .0
             .with_out_parts(vout, |val, _| val)
