@@ -60,7 +60,7 @@ pub mod scripts;
 pub mod write;
 
 pub use bq_resolve::{
-    confirm_bq_resolve_wave_capped, take_wave_items_for_load, BqResolveWave,
+    confirm_bq_resolve_wave_capped, take_wave_items_for_load, BqResolveWave, UndrainedCreates,
     BQ_RESOLVE_WAVE_MAX_BLOCKS, BQ_RESOLVE_WAVE_MAX_INPUTS,
 };
 #[doc(hidden)]

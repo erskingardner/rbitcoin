@@ -69,6 +69,7 @@ fn spindle_hold_blocks_lookup_and_load_bulk_reads() {
                         &[],
                         1,
                         1,
+                        &mut rbitcoin_query::UndrainedCreates::default(),
                     );
                 } else {
                     let _ = rbitcoin_ibd::ibd::confirm::load_bulk_stamp(

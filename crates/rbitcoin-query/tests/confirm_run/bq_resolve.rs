@@ -38,6 +38,7 @@ fn resolve_wave(
         heights,
         BQ_RESOLVE_WAVE_MAX_BLOCKS,
         BQ_RESOLVE_WAVE_MAX_INPUTS,
+        &mut UndrainedCreates::default(),
     )
     .unwrap()
 }
@@ -968,6 +969,7 @@ fn wave_under_confirm_cancel_returns_cancelled() {
         &[1],
         BQ_RESOLVE_WAVE_MAX_BLOCKS,
         BQ_RESOLVE_WAVE_MAX_INPUTS,
+        &mut UndrainedCreates::default(),
     ) {
         Ok(_) => panic!("a wave under the confirm cancel must not resolve"),
         Err(e) => e,
