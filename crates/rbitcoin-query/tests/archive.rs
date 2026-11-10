@@ -2158,6 +2158,49 @@ fn same_batch_overlay_follows_an_unsorted_plan() {
     );
 }
 
+/// One contiguous run of planned fks is indexed by subtraction. Anything
+/// else keeps the map, so an id in a gap, below the run, or past its end
+/// does not land on a neighbor's row.
+#[test]
+fn planned_rows_subtract_on_one_run_and_map_otherwise() {
+    use rbitcoin_query::archive::PlannedRows;
+
+    type Case<'a> = (&'a [Fk], bool, &'a [(u64, Option<usize>)]);
+    let cases: &[Case] = &[
+        (
+            &[Fk(7), Fk(8), Fk(9)],
+            true,
+            &[(7, Some(0)), (9, Some(2)), (6, None), (10, None)],
+        ),
+        (
+            &[Fk(u64::MAX - 1), Fk(u64::MAX)],
+            true,
+            &[(u64::MAX, Some(1)), (1, None)],
+        ),
+        (
+            &[Fk(7), Fk(8), Fk(10)],
+            false,
+            &[(8, Some(1)), (9, None), (10, Some(2))],
+        ),
+        (&[Fk(8), Fk(7), Fk(9)], false, &[(7, Some(1)), (8, Some(0))]),
+        // A repeat keeps the later row, as the map did.
+        (&[Fk(7), Fk(7), Fk(8)], false, &[(7, Some(1))]),
+        // A null fk is not a create, at the front or inside, and it breaks
+        // the run: the id after it keeps its position, not its distance.
+        (&[Fk::NULL, Fk(1), Fk(2)], false, &[(0, None), (2, Some(2))]),
+        (&[Fk(7), Fk::NULL, Fk(9)], false, &[(8, None), (9, Some(2))]),
+        (&[Fk(7), Fk::NULL, Fk(8)], false, &[(8, Some(2)), (9, None)]),
+    ];
+    for &(fks, one_run, lookups) in cases {
+        let rows = PlannedRows::from_fks(fks);
+        assert_eq!(matches!(rows, PlannedRows::Run { .. }), one_run, "{fks:?}");
+        for &(id, row) in lookups {
+            assert_eq!(rows.row(id), row, "{fks:?} id {id}");
+        }
+    }
+    assert_eq!(PlannedRows::from_fks(&[]).row(1), None);
+}
+
 /// `wire_edges_match` is the release tripwire for a prevout the edge
 /// builder did not copy from the wire tx. A coinbase input is skipped.
 #[test]
