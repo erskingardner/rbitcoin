@@ -291,6 +291,133 @@ pub fn assemble_run(
 pub struct StructuralReuse {
     pub scratch: crate::block_pipeline::StructuralScratch,
     pub pending: crate::block_pipeline::BatchSpent,
+    /// Spent slots read for the batch. Not the annotate slots on `scratch`.
+    pub spent_slots: BatchSlots,
+}
+
+/// The spent slots one write batch reads, grouped by block.
+///
+/// `jobs` holds every spend that needs the on-disk slot, in block order, and
+/// `metas` the slot each one read. `ends[i]` is where block `i` stops.
+#[derive(Debug, Default)]
+pub struct BatchSlots {
+    pub jobs: Vec<crate::block_pipeline::StructuralAbsJob>,
+    pub metas: Vec<Option<rbitcoin_store::tx_table::SpenderSlot>>,
+    pub ends: Vec<usize>,
+}
+
+impl BatchSlots {
+    fn clear(&mut self) {
+        self.jobs.clear();
+        self.metas.clear();
+        self.ends.clear();
+    }
+
+    /// Block `i`'s jobs and slots. A block past the batch has none.
+    pub fn block(&self, i: usize) -> crate::block_pipeline::BlockSlots<'_> {
+        let Some(&hi) = self.ends.get(i) else {
+            return Default::default();
+        };
+        let lo = i.checked_sub(1).map_or(0, |prev| self.ends[prev]);
+        crate::block_pipeline::BlockSlots {
+            jobs: &self.jobs[lo..hi],
+            metas: &self.metas[lo..hi],
+        }
+    }
+}
+
+type SpendRow = (
+    [u8; 32],
+    u32,
+    rbitcoin_primitives::Fk,
+    rbitcoin_primitives::Fk,
+    u32,
+);
+
+/// Give every spend of the batch that needs an on-disk slot its slot.
+///
+/// `ahead` is what `ibd-confirm-spent` read while Class A appended: slots of
+/// parents an earlier write archived, in block order. Jobs take those by
+/// offset, in order. A job with no slot there (its create was appended by
+/// this write, or `--datadir-hdd` read nothing ahead) is read here, after
+/// the append, in one read for the whole batch. The sole same-batch spender
+/// of a create this write appended needs no slot: Class A wrote it.
+///
+/// Every slot in `ahead` must be claimed. One left over means the walk
+/// before the append and the walk after it disagree.
+pub fn resolve_batch_slots<'a>(
+    query: &Query,
+    blocks: impl IntoIterator<
+        Item = (
+            &'a [SpendRow],
+            &'a [crate::block_pipeline::StructuralAbsJob],
+        ),
+    >,
+    class_a_wave: &crate::block_pipeline::ClassAWave,
+    ahead: &crate::block_pipeline::SlotRead,
+    scratch: &mut crate::block_pipeline::StructuralScratch,
+    out: &mut BatchSlots,
+) -> Result<(), ConfirmError> {
+    use crate::block_pipeline::{fill_overlay_skip, overlay_meta_is_skip, read_spent_slots};
+    out.clear();
+    if ahead.metas.len() != ahead.abs.len() {
+        return Err(ConfirmError::Store(StoreError::Corrupt(
+            "invariant: structural meta batch length",
+        )));
+    }
+    let mut next = 0usize;
+    let mut late_at: Vec<usize> = Vec::new();
+    let mut late_abs: Vec<u64> = Vec::new();
+    let mut ovl_n = 0u64;
+    for (spends, jobs) in blocks {
+        scratch.skip.clear();
+        fill_overlay_skip(spends, class_a_wave, scratch);
+        for &job in jobs {
+            let (id, vout, abs, sfk, vin) = job;
+            let read = ahead.abs.get(next) == Some(&abs);
+            if read {
+                next += 1;
+            }
+            if overlay_meta_is_skip(id, vout, sfk, vin, &scratch.skip) {
+                ovl_n = ovl_n.saturating_add(1);
+                continue;
+            }
+            out.jobs.push(job);
+            if read {
+                out.metas.push(ahead.metas[next - 1]);
+            } else {
+                late_at.push(out.metas.len());
+                late_abs.push(abs);
+                out.metas.push(None);
+            }
+        }
+        out.ends.push(out.jobs.len());
+    }
+    if next != ahead.abs.len() {
+        return Err(ConfirmError::Store(StoreError::Corrupt(
+            "invariant: spent slot read ahead is not a spend of this batch",
+        )));
+    }
+    let stats = query.confirm_stats();
+    crate::note_confirm(&stats.spend_overlay_skip_n, ovl_n);
+    let note_read = |n: usize, ns: u64| {
+        crate::note_confirm(&stats.spend_meta_reads, 1);
+        crate::note_confirm(&stats.spend_meta_n, n as u64);
+        crate::note_confirm(&stats.spend_meta_ns, ns);
+    };
+    if !ahead.abs.is_empty() {
+        note_read(ahead.abs.len(), ahead.read_ns);
+        crate::note_confirm(&stats.spend_meta_ahead_n, ahead.abs.len() as u64);
+    }
+    if !late_abs.is_empty() {
+        super::write::spindle_mark("spent-late");
+        let late = read_spent_slots(query.store(), late_abs).map_err(ConfirmError::from)?;
+        note_read(late.abs.len(), late.read_ns);
+        for (at, meta) in late_at.into_iter().zip(late.metas) {
+            out.metas[at] = meta;
+        }
+    }
+    Ok(())
 }
 
 /// Prepared header at BIP34 height when this write contains that block.
@@ -341,6 +468,9 @@ pub fn remember_connected_bip34(query: &Query, params: &ChainParams, prepared: &
 }
 
 /// Durable spentness + maturity + subsidy after scripts (height order).
+///
+/// `ahead` is the batch's slot read from `ibd-confirm-spent`, joined by the
+/// caller. Slots it does not hold are read here once, before the first block.
 #[allow(clippy::too_many_arguments)] // call-site args stay unbundled
 pub fn structural_run(
     query: &Query,
@@ -351,6 +481,7 @@ pub fn structural_run(
     batch_parents: &crate::BatchParents,
     abs_jobs: &[Vec<crate::block_pipeline::StructuralAbsJob>],
     class_a_wave: &crate::block_pipeline::ClassAWave,
+    ahead: &crate::block_pipeline::SlotRead,
     reuse: &mut StructuralReuse,
 ) -> Result<
     (
@@ -379,6 +510,23 @@ pub fn structural_run(
         }
     }
     let mut tot = StructuralPhaseNs::default();
+    // One slot read for the batch, not one per block: annotate runs once per
+    // batch, so every block sees the same slots either way.
+    let t_slots = Instant::now();
+    resolve_batch_slots(
+        query,
+        prepared
+            .iter()
+            .zip(abs_jobs)
+            .map(|(p, jobs)| (p.spends.as_slice(), jobs.as_slice())),
+        class_a_wave,
+        ahead,
+        &mut reuse.scratch,
+        &mut reuse.spent_slots,
+    )?;
+    let slots_ns = t_slots.elapsed().as_nanos() as u64;
+    tot.spent_ns = slots_ns;
+    tot.spent_abs_ns = slots_ns;
     let bip34_ancestor = bip34_ancestor_for_write(query, params, prepared);
     for (i, p) in prepared.iter().enumerate() {
         rbitcoin_consensus::note_block_height(p.height.0);
@@ -393,7 +541,7 @@ pub fn structural_run(
             batch_parents,
             &mut mtp_cache,
             &index,
-            class_a_wave,
+            reuse.spent_slots.block(i),
             &mut reuse.scratch,
             &abs_jobs[i],
             bip34_ancestor,

@@ -480,6 +480,52 @@ pub fn pin_for_wire_batch<'a>(
     Ok((batch_parents, spend_edges))
 }
 
+/// What the write knows about spend slots before its Class A append.
+pub struct SpendAbsAhead {
+    /// `spent.body` offsets of parents an earlier write archived, in block
+    /// order. A repeat inside one block is one offset.
+    pub abs: Vec<u64>,
+    /// Creates with no slot offset yet, with the vouts spent. Fill stamps
+    /// these after the append.
+    pub need: U64Map<Vec<u32>>,
+}
+
+/// One walk of the batch's spend edges before the Class A append.
+///
+/// `first_planned` is the lowest create fk this write appends. A parent
+/// below it was archived by an earlier write: its slot is on disk and does
+/// not change until this write's spend annotate, so it can be read while
+/// Class A appends. A parent at or above it is read after the append.
+pub fn spend_abs_before_append(
+    batch_parents: &crate::BatchParents,
+    prepared: &[Prepared],
+    first_planned: Option<u64>,
+) -> SpendAbsAhead {
+    let mut out = SpendAbsAhead {
+        abs: Vec::new(),
+        need: U64Map::default(),
+    };
+    let mut seen = crate::U64Set::default();
+    for p in prepared {
+        seen.clear();
+        for &(_txid, vout, sfk, cfk, _vin) in &p.spends {
+            let Some(id) = cfk.get() else {
+                continue;
+            };
+            match batch_parents.get_spender_abs(cfk, vout) {
+                Some(abs) => {
+                    if first_planned.is_none_or(|lo| id < lo) && seen.insert(abs) {
+                        out.abs.push(abs);
+                    }
+                }
+                None if sfk.is_null() => {}
+                None => out.need.entry(id).or_default().push(vout),
+            }
+        }
+    }
+    out
+}
+
 /// One `spend_abs_jobs` walk per prepared block, after fill has stamped ranges.
 ///
 /// Missing in-range abs is the ensure `Corrupt`. The write phase returns that

@@ -565,7 +565,8 @@ fn add_spent_value(
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StructuralPhaseNs {
     pub spent_ns: u64,
-    /// Pin abs collect + bulk on-disk 8-byte spender meta pread.
+    /// Pin abs collect, plus the batch's slot resolve: the write-thread slot
+    /// read for creates this batch appended. The read ahead is not in here.
     pub spent_abs_ns: u64,
     /// `is_confirmed_strong_at` on non-null fields (still durable authority).
     pub spent_strong_ns: u64,
@@ -625,8 +626,6 @@ pub struct StructuralScratch {
     pub unique_fks: Vec<rbitcoin_primitives::Fk>,
     pub height_by_id: U64Map<u32>,
     pub skip: OverlayMetaSkip,
-    pub disk_jobs: Vec<StructuralAbsJob>,
-    pub abs_offs: Vec<u64>,
     pub field_fks: Vec<rbitcoin_primitives::Fk>,
     pub field_seen: crate::U64Set,
     pub field_h_by_id: U64Map<u32>,
@@ -647,8 +646,6 @@ impl Default for StructuralScratch {
             unique_fks: Vec::new(),
             height_by_id: U64Map::default(),
             skip: OverlayMetaSkip::with_hasher(Default::default()),
-            disk_jobs: Vec::new(),
-            abs_offs: Vec::new(),
             field_fks: Vec::new(),
             field_seen: crate::U64Set::default(),
             field_h_by_id: U64Map::default(),
@@ -678,8 +675,6 @@ impl StructuralScratch {
         self.unique_fks.clear();
         self.height_by_id.clear();
         self.skip.clear();
-        self.disk_jobs.clear();
-        self.abs_offs.clear();
         self.field_fks.clear();
         self.field_seen.clear();
         self.field_h_by_id.clear();
@@ -690,11 +685,13 @@ impl StructuralScratch {
 }
 
 #[allow(clippy::too_many_arguments)] // call-site args stay unbundled
-/// **Spentness:** pin denserels → abs + bulk 8-byte meta. Sparse durable-**spent**
-/// set (not unspent). Missing abs / short meta is hard `Err`. **Multi-list** after
-/// reorg annotate is a protocol cold walk (`has_confirmed_strong_spender_create`)
-/// — not a hard fail (tip-follow reorgs leave multi flags by design). Emits
-/// Annotate slots on `scratch` for pure-write annotate.
+/// **Spentness:** pin denserels → abs, then the spent slots the write batch
+/// read for this block (`slots`; this function reads none). Sparse
+/// durable-**spent** set (not unspent). Missing abs / short meta is hard `Err`.
+/// **Multi-list** after reorg annotate is a protocol cold walk
+/// (`has_confirmed_strong_spender_create`) — not a hard fail (tip-follow
+/// reorgs leave multi flags by design). Emits Annotate slots on `scratch` for
+/// pure-write annotate.
 pub fn structural_validate_spends(
     query: &Query,
     block: &Block,
@@ -711,7 +708,7 @@ pub fn structural_validate_spends(
     batch_parents: &crate::BatchParents,
     mtp_cache: &mut U32Map<u32>,
     run_create_height: &RunCreateHeight,
-    class_a_wave: &ClassAWave,
+    slots: BlockSlots<'_>,
     scratch: &mut StructuralScratch,
     abs_jobs: &[StructuralAbsJob],
     bip34_ancestor: Option<bitcoin::BlockHash>,
@@ -738,9 +735,8 @@ pub fn structural_validate_spends(
     let tip = query.tip_height().map(|h| h.0);
     let mut spent_strong_ns = 0u64;
     let mut multi_list_ns = 0u64;
-    if !scratch.abs_jobs.is_empty() {
-        fill_overlay_skip(spends, class_a_wave, scratch);
-        let loaded = structural_load_durable_spent(query, tip, scratch)?;
+    if !slots.jobs.is_empty() {
+        let loaded = structural_load_durable_spent(query, tip, scratch, slots)?;
         multi_list_ns = loaded.0;
         spent_strong_ns = loaded.1;
     }
@@ -788,6 +784,47 @@ pub fn structural_validate_spends(
 }
 
 pub type StructuralAbsJob = (u64, u32, u64, rbitcoin_primitives::Fk, u32);
+
+/// Spent slots one bulk read returned, parallel to the `spent.body` offsets
+/// asked for. `None` is a short or out-of-range slot.
+#[derive(Debug, Default)]
+pub struct SlotRead {
+    pub abs: Vec<u64>,
+    pub metas: Vec<Option<rbitcoin_store::tx_table::SpenderSlot>>,
+    /// Wall time of the read on the thread that ran it.
+    pub read_ns: u64,
+}
+
+/// One bulk read of spent slots through the store's spend-meta reader.
+///
+/// The write batch calls this at most twice: once on `ibd-confirm-spent`
+/// for parents archived by earlier writes, once on the write thread for the
+/// rest. A failed read is the error. There is no second attempt here.
+pub fn read_spent_slots(
+    store: &rbitcoin_store::Store,
+    abs: Vec<u64>,
+) -> Result<SlotRead, rbitcoin_store::StoreError> {
+    let t = Instant::now();
+    let metas =
+        store.get_spender_meta_at_abs_batch_backend(&abs, rbitcoin_store::spend_meta_backend())?;
+    if metas.len() != abs.len() {
+        return Err(rbitcoin_store::StoreError::Corrupt(
+            "invariant: structural meta batch length",
+        ));
+    }
+    Ok(SlotRead {
+        abs,
+        metas,
+        read_ns: t.elapsed().as_nanos() as u64,
+    })
+}
+
+/// One block's spends that need the on-disk slot, with the slot each read.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BlockSlots<'a> {
+    pub jobs: &'a [StructuralAbsJob],
+    pub metas: &'a [Option<rbitcoin_store::tx_table::SpenderSlot>],
+}
 
 /// Creates this write batch's Class A append committed.
 ///
@@ -975,47 +1012,26 @@ pub fn structural_abs_heights(
     Ok(())
 }
 
+/// Apply one block's slots: durable-spent set plus annotate slots. No IO for
+/// the slots themselves. Multi-list and strong checks stay here.
 #[doc(hidden)]
 pub fn structural_load_durable_spent(
     query: &Query,
     tip: Option<u32>,
     scratch: &mut StructuralScratch,
+    slots: BlockSlots<'_>,
 ) -> Result<(u64, u64), ConfirmError> {
     use std::time::Instant;
-    let mut ovl_n = 0u64;
-    for &job in &scratch.abs_jobs {
-        let (id, vout, abs, sfk, vin) = job;
-        if overlay_meta_is_skip(id, vout, sfk, vin, &scratch.skip) {
-            ovl_n = ovl_n.saturating_add(1);
-            continue;
-        }
-        scratch.disk_jobs.push(job);
-        scratch.abs_offs.push(abs);
-    }
-    crate::note_confirm(&query.confirm_stats().spend_overlay_skip_n, ovl_n);
-    if scratch.abs_offs.is_empty() {
-        return Ok((0, 0));
-    }
-    let meta_backend = rbitcoin_store::spend_meta_backend();
-    let t_meta = Instant::now();
-    let metas = query
-        .store()
-        .get_spender_meta_at_abs_batch_backend(&scratch.abs_offs, meta_backend)
-        .map_err(ConfirmError::from)?;
-    let meta_ns = t_meta.elapsed().as_nanos() as u64;
-    crate::note_confirm(&query.confirm_stats().spend_meta_ns, meta_ns);
-    crate::note_confirm(
-        &query.confirm_stats().spend_meta_n,
-        scratch.abs_offs.len() as u64,
-    );
-    let _ = meta_backend;
-    if metas.len() != scratch.disk_jobs.len() {
+    if slots.metas.len() != slots.jobs.len() {
         return Err(ConfirmError::Store(rbitcoin_store::StoreError::Corrupt(
             "invariant: structural meta batch length",
         )));
     }
+    if slots.jobs.is_empty() {
+        return Ok((0, 0));
+    }
     let t_strong = Instant::now();
-    for row in &metas {
+    for row in slots.metas {
         let Some((field, _, _)) = row else {
             continue;
         };
@@ -1037,18 +1053,11 @@ pub fn structural_load_durable_spent(
             scratch.field_h_by_id.insert(id, h);
         }
     }
-    let jobs = std::mem::take(&mut scratch.disk_jobs);
-    let applied = jobs
-        .iter()
-        .copied()
-        .zip(metas)
-        .try_fold(0u64, |acc, (job, meta)| {
-            let (id, vout, abs, sfk, vin) = job;
-            let ns = structural_apply_one_meta(query, meta, id, vout, abs, sfk, vin, tip, scratch)?;
-            Ok::<u64, ConfirmError>(acc.saturating_add(ns))
-        });
-    scratch.disk_jobs = jobs;
-    let multi_list_ns = applied?;
+    let mut multi_list_ns = 0u64;
+    for (&(id, vout, abs, sfk, vin), &meta) in slots.jobs.iter().zip(slots.metas) {
+        let ns = structural_apply_one_meta(query, meta, id, vout, abs, sfk, vin, tip, scratch)?;
+        multi_list_ns = multi_list_ns.saturating_add(ns);
+    }
     let spent_strong_ns = t_strong
         .elapsed()
         .as_nanos()

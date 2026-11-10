@@ -43,8 +43,13 @@
 //!   waves have nothing left to claim. The publisher does not `wait_done`
 //!   until both waves have finished executing.
 //! - **write** = Class A + ensure + structural + class_c + spend
-//!   + `pins=` / `head_sub=` / `drain_join=` / `dequeue=` / `idx_put=`.
-//!     `other=` is write-thread work minus that inventory.
+//!   + `pins=` / `head_sub=` / `slots_join=` / `drain_join=` / `dequeue=` /
+//!   `idx_put=`. `other=` is write-thread work minus that inventory.
+//!   `slots_join=` is the write thread waiting for `ibd-confirm-spent`, which
+//!   reads the spent slots of already-archived parents while Class A appends.
+//!   That read is `meta_ms` / `meta_ahead_n` and is not inside `struct=`.
+//!   `struct=` still holds the slot read for creates the batch itself
+//!   appended, and every slot read under `--datadir-hdd`.
 //!
 //! **Inventory:** write-stage names live on [`WriteStageSample`]. A new counter
 //! is a field on [`IbdPerfSample`]; JSON includes it because the struct
@@ -103,6 +108,11 @@ pub struct WriteStageSample {
     /// Commit wait for the previous batch's background tip flush (`tip_flush_wait=`)
     pub tip_flush_wait_ms: u64,
     pub tip_flush_wait_ns: u64,
+    /// Wait for the spent-slot read ahead on `ibd-confirm-spent`
+    /// (`slots_join=`). Near zero when the read finished inside the Class A
+    /// append.
+    pub slots_join_ms: u64,
+    pub slots_join_ns: u64,
     /// Residual `head_insert_queued` join after Class C (`drain_join=`).
     /// Includes seal-sidecar collect of `txid.body` keys plus fuse/MPHF build.
     pub drain_join_ms: u64,
@@ -148,6 +158,7 @@ impl WriteStageSample {
             |s| s.tip_flush_wait_ms,
             |s| s.tip_flush_wait_ns,
         ),
+        ("slots_join", |s| s.slots_join_ms, |s| s.slots_join_ns),
         ("drain_join", |s| s.drain_join_ms, |s| s.drain_join_ns),
         ("dequeue", |s| s.dequeue_ms, |s| s.dequeue_ns),
         ("idx_put", |s| s.idx_put_ms, |s| s.idx_put_ns),
@@ -244,9 +255,15 @@ pub struct IbdPerfSample {
     /// Pending spend annotate a failed write left, replayed before the next
     /// write. Nested in `spend=`, not an exclusive write token.
     pub spend_replay_ms: u64,
-    /// Structural meta bulk read wall ms / peek count.
+    /// Spent-slot bulk read wall ms / slot count, on whichever thread read:
+    /// `ibd-confirm-spent` ahead of the Class A append, or the write thread
+    /// after it.
     pub meta_ms: u64,
     pub meta_n: u64,
+    /// Bulk slot reads issued. At most two per write batch.
+    pub meta_reads: u64,
+    /// Slots of `meta_n` read ahead of the append, off the write thread.
+    pub meta_ahead_n: u64,
     /// Same-batch overlay slots that skipped the structural meta pread.
     pub ovl_n: u64,
     pub load_ms: u64,
@@ -528,6 +545,8 @@ impl Default for IbdPerfSample {
             spend_replay_ms: 0,
             meta_ms: 0,
             meta_n: 0,
+            meta_reads: 0,
+            meta_ahead_n: 0,
             ovl_n: 0,
             load_ms: 0,
             prep_wire_arc_ms: 0,
@@ -897,6 +916,7 @@ pub fn sample(
     let class_a_ns = w.class_a_ns;
     let ensure_ns = w.ensure_layout_ns;
     let drain_join_ns = w.write_drain_join_ns;
+    let slots_join_ns = w.write_slots_join_ns;
     let tip_flush_wait_ns = w.write_tip_flush_wait_ns;
     let dequeue_ns = w.write_dequeue_ns;
     let pins_take_ns = w.write_plan_take_ns;
@@ -994,6 +1014,8 @@ pub fn sample(
             class_c_join_ns,
             tip_flush_wait_ms: ns_ms(tip_flush_wait_ns),
             tip_flush_wait_ns,
+            slots_join_ms: ns_ms(slots_join_ns),
+            slots_join_ns,
             drain_join_ms: ns_ms(drain_join_ns),
             drain_join_ns,
             dequeue_ms: ns_ms(dequeue_ns),
@@ -1033,6 +1055,8 @@ pub fn sample(
         spend_replay_ms: ns_ms(spend_replay_ns),
         meta_ms: ns_ms(meta_ns),
         meta_n,
+        meta_reads: w.spend_meta_reads,
+        meta_ahead_n: w.spend_meta_ahead_n,
         ovl_n,
         load_ms: ns_ms(load_ns),
         prep_wire_arc_ms: ns_ms(prep_wire_arc_ns),

@@ -148,6 +148,8 @@ confirm_window! {
     // Commit wait for the previous IBD batch's tip flush (`rbtc-tip-flush`).
     write_tip_flush_wait_ns,
     write_drain_join_ns,
+    // Write-thread wait for the spent-slot read ahead (`ibd-confirm-spent`).
+    write_slots_join_ns,
     write_dequeue_ns,
     write_plan_take_ns,
     write_create_map_ns,
@@ -177,6 +179,9 @@ confirm_window! {
     spend_replay_ns,
     spend_meta_ns,
     spend_meta_n,
+    // Bulk spent-slot reads issued, and slots read ahead of the Class A append.
+    spend_meta_reads,
+    spend_meta_ahead_n,
     spend_overlay_skip_n,
     phase_prep_wire_arc_ns,
     phase_prep_struct_ns,

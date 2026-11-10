@@ -25,26 +25,29 @@ pub struct DrainWorkers {
     pub cv: Condvar,
 }
 
+/// Start one named OS thread that runs queued jobs in order. It stays up
+/// for the process: a confirm sidecar is not a per-batch spawn.
 #[doc(hidden)]
-pub fn pool() -> &'static DrainWorkers {
-    static POOL: OnceLock<DrainWorkers> = OnceLock::new();
-    static SPAWN: OnceLock<()> = OnceLock::new();
-    let pool = POOL.get_or_init(|| DrainWorkers {
+pub fn spawn_worker(name: &'static str) -> Arc<DrainWorkers> {
+    let workers = Arc::new(DrainWorkers {
         jobs: Mutex::new(VecDeque::new()),
         cv: Condvar::new(),
     });
-    SPAWN.get_or_init(|| {
-        let jobs = &pool.jobs;
-        let cv = &pool.cv;
-        thread::Builder::new()
-            .name(HEAD_DRAIN_THREAD_NAME.into())
-            .spawn(move || loop {
-                let f = recv_job(jobs, cv);
-                f();
-            })
-            .expect("spawn ibd-confirm-head");
-    });
-    pool
+    let run = Arc::clone(&workers);
+    thread::Builder::new()
+        .name(name.into())
+        .spawn(move || loop {
+            let f = recv_job(&run.jobs, &run.cv);
+            f();
+        })
+        .expect("spawn confirm sidecar thread");
+    workers
+}
+
+#[doc(hidden)]
+pub fn pool() -> &'static DrainWorkers {
+    static POOL: OnceLock<Arc<DrainWorkers>> = OnceLock::new();
+    POOL.get_or_init(|| spawn_worker(HEAD_DRAIN_THREAD_NAME))
 }
 
 #[doc(hidden)]

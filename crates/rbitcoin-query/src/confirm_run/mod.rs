@@ -15,6 +15,8 @@
 //!   Class A commit (if plan) + structural + class_c + spend annotate + tip GC.
 //!   `tx.head` write-behind drain runs on process-wide `ibd-confirm-head`
 //!   (overlap with structural + Class C; not a per-batch spawn).
+//!   Spent slots of parents archived by earlier writes are read on
+//!   process-wide `ibd-confirm-spent` (overlap with the Class A commit).
 //! ```
 //! IBD pipelines lookup(N+1) ∥ load(N) ∥ scripts(N−1) ∥ write(N−2). One Class A appender.
 //!
@@ -57,6 +59,8 @@ pub mod pin;
 #[doc(hidden)]
 pub mod scripts;
 #[doc(hidden)]
+pub mod spent_ahead;
+#[doc(hidden)]
 pub mod write;
 
 pub use bq_resolve::{
@@ -81,8 +85,12 @@ use phases::{assemble_run, Assembled};
 #[doc(hidden)]
 pub use pin::ensure_spend_abs_layouts;
 #[doc(hidden)]
-pub use pin::{collect_spend_abs_after_fill, pin_for_wire_batch};
+pub use pin::{
+    collect_spend_abs_after_fill, pin_for_wire_batch, spend_abs_before_append, SpendAbsAhead,
+};
 pub use scripts::{confirm_scripts_phase, drive_script_waves_with};
+#[doc(hidden)]
+pub use spent_ahead::{submit_spent_ahead, SPENT_AHEAD_THREAD_NAME};
 pub use write::finish_post_commit;
 pub use write::{
     confirm_write_phase, confirm_write_phase_or_return, finish_post_commit_hashes,

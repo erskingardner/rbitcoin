@@ -13,6 +13,16 @@ thread_local! {
 thread_local! {
     static SPINDLE_TRACE_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static SPINDLE_TRACE: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+    static FAIL_SPENT_AHEAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Make the next read ahead this thread starts fail on `ibd-confirm-spent`,
+/// the way a failed `spent.body` read does. The bulk reader's own fault arms
+/// are per thread or libc-only, so they do not reach that thread's session.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn fail_next_spent_ahead() {
+    FAIL_SPENT_AHEAD.with(|fail| fail.set(true));
 }
 
 #[doc(hidden)]
@@ -86,6 +96,44 @@ pub fn submit_queued<'a>(
     drain
 }
 
+/// Start the batch's slot read ahead of the Class A append.
+///
+/// `--datadir-hdd` starts nothing: a bulk read must not overlap the append
+/// on a spindle, so structural reads every slot after the append instead.
+fn start_spent_ahead(query: &Query, abs: Vec<u64>) -> super::spent_ahead::SpentAhead {
+    if abs.is_empty() || query.store().datadir_hdd() {
+        return super::spent_ahead::SpentAhead::idle();
+    }
+    spindle_mark("spent-ahead");
+    #[cfg(debug_assertions)]
+    if FAIL_SPENT_AHEAD.with(|fail| fail.replace(false)) {
+        return super::spent_ahead::submit_spent_ahead(|| {
+            Err(StoreError::Corrupt(
+                "spent slot read ahead: injected failure",
+            ))
+        });
+    }
+    super::spent_ahead::read_spent_ahead(Arc::clone(&query.store), abs)
+}
+
+/// Wait for the read ahead. The wait is `slots_join=` on the write thread.
+fn join_spent_ahead(
+    query: &Query,
+    ahead: super::spent_ahead::SpentAhead,
+) -> Result<crate::block_pipeline::SlotRead, ConfirmError> {
+    if !ahead.started() {
+        return Ok(crate::block_pipeline::SlotRead::default());
+    }
+    spindle_mark("spent-join");
+    let t_join = Instant::now();
+    let read = ahead.join().map_err(ConfirmError::from);
+    let join_ns = t_join.elapsed().as_nanos() as u64;
+    if join_ns > 0 {
+        crate::note_confirm(&query.confirm_stats().write_slots_join_ns, join_ns);
+    }
+    read
+}
+
 pub fn write_height_needed(tip: Option<u32>, height: u32) -> bool {
     match tip {
         None => true,
@@ -155,6 +203,7 @@ pub struct ArchivePlanNs {
 pub fn apply_archive_plan(
     query: &Query,
     batch: &mut ScriptOkBatch,
+    need: &U64Map<Vec<u32>>,
 ) -> Result<ArchivePlanNs, ConfirmError> {
     let mut ns = ArchivePlanNs {
         pins: FkMap::default(),
@@ -210,7 +259,7 @@ pub fn apply_archive_plan(
         &planned_fks,
         &loc,
         &packed_pins,
-        &batch.prepared,
+        need,
     ) {
         // Class A is already appended. `header_txs` is what a retry uses to
         // skip that append. Store it even though this phase failed.
@@ -234,6 +283,8 @@ pub fn apply_archive_plan(
 ///
 /// When `batch.archive_plan` is set (wire lookup/load path), Class A is appended in this
 /// same stage before structural/annotate — single ordered commit era.
+/// Spent slots of parents archived by earlier writes are read on
+/// `ibd-confirm-spent` while Class A appends, and joined before structural.
 /// **Class A never leads tip** (no dual-track archive-ahead / body DONTNEED lead).
 ///
 /// Accrues window timers on [`Query::confirm_stats`] and snapshots the last batch
@@ -304,6 +355,22 @@ fn write_phase_inner(
 
     let t_wall = Instant::now();
 
+    // The previous batch's spend annotate has returned, or was replayed just
+    // above. Nothing writes an already-archived slot again until this batch's
+    // own annotate, so those slots are read while Class A appends.
+    let t_ahead = Instant::now();
+    let first_planned = batch
+        .archive_plan
+        .as_ref()
+        .and_then(|plan| plan.planned_fks.iter().filter_map(|fk| fk.get()).min());
+    let super::SpendAbsAhead { abs, need } =
+        super::spend_abs_before_append(&batch.batch_parents, &batch.prepared, first_planned);
+    let ahead_walk_ns = t_ahead.elapsed().as_nanos() as u64;
+    let ahead = start_spent_ahead(query, abs);
+
+    let archived = apply_archive_plan(query, batch, &need);
+    // Joined on every path: a failed append leaves no read in flight.
+    let ahead = join_spent_ahead(query, ahead);
     let ArchivePlanNs {
         pins: write_create_pins,
         class_a_wave,
@@ -312,17 +379,20 @@ fn write_phase_inner(
         mut ensure_ns,
         plan_take_ns,
         create_map_ns,
-    } = apply_archive_plan(query, batch)?;
+    } = archived?;
     let t_ens = Instant::now();
-    let abs_jobs = match super::collect_spend_abs_after_fill(&batch.batch_parents, &batch.prepared)
-    {
-        Ok(jobs) => jobs,
+    let slots = super::collect_spend_abs_after_fill(&batch.batch_parents, &batch.prepared)
+        .and_then(|jobs| ahead.map(|read| (jobs, read)));
+    let (abs_jobs, ahead) = match slots {
+        Ok(v) => v,
         Err(e) => {
             publish_archived_header_ranges(query, &header_ranges)?;
             return Err(e);
         }
     };
-    ensure_ns = ensure_ns.saturating_add(t_ens.elapsed().as_nanos() as u64);
+    ensure_ns = ensure_ns
+        .saturating_add(ahead_walk_ns)
+        .saturating_add(t_ens.elapsed().as_nanos() as u64);
     if class_a_ns > 0 {
         crate::note_confirm(&query.confirm_stats().class_a_ns, class_a_ns);
     }
@@ -360,6 +430,7 @@ fn write_phase_inner(
                 &batch.batch_parents,
                 &abs_jobs,
                 &class_a_wave,
+                &ahead,
                 &mut reuse.borrow_mut(),
             )
         })?;
@@ -777,28 +848,17 @@ pub fn annotate_slots_from_connected_hash(
 /// After Class A commit, stamp spend creates from append RAM loc
 /// (this pack + just-written packs still in the write loc window).
 /// Write never preads `create.loc`.
+///
+/// `need` is the creates with no slot offset yet, from the walk before the
+/// append ([`super::spend_abs_before_append`]). The append does not change it.
 pub fn fill_planned_create_layout_after_commit(
     query: &Query,
     batch_parents: &mut crate::BatchParents,
     planned_fks: &[rbitcoin_primitives::Fk],
     loc: &[rbitcoin_store::CreateLocPair],
     packed: &[crate::CreatePin],
-    prepared: &[Prepared],
+    need: &U64Map<Vec<u32>>,
 ) -> Result<(), ConfirmError> {
-    let mut need: U64Map<Vec<u32>> = U64Map::default();
-    for p in prepared {
-        for &(_txid, vout, sfk, cfk, _vin) in &p.spends {
-            if sfk.is_null() || cfk.is_null() {
-                continue;
-            }
-            if batch_parents.get_spender_abs(cfk, vout).is_some() {
-                continue;
-            }
-            if let Some(id) = cfk.get() {
-                need.entry(id).or_default().push(vout);
-            }
-        }
-    }
     if need.is_empty() {
         return Ok(());
     }
