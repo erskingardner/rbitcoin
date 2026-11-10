@@ -364,6 +364,12 @@ pub struct IbdPerfSample {
     pub thr_script_send_wait_ms: u64,
     pub thr_write_recv_wait_ms: u64,
     pub thr_write_work_ms: u64,
+    /// `ibd-confirm-drop` wall freeing written batches. Not inside
+    /// `thr_write_work_ms`.
+    pub thr_drop_work_ms: u64,
+    /// Written batches the write thread freed itself because the drop queue
+    /// was full. That time is inside `thr_write_work_ms`.
+    pub write_drop_inline: u64,
     pub plan_blks: u64,
     pub plan_ms: u64,
     pub plan_collect_ms: u64,
@@ -615,6 +621,8 @@ impl Default for IbdPerfSample {
             thr_script_send_wait_ms: 0,
             thr_write_recv_wait_ms: 0,
             thr_write_work_ms: 0,
+            thr_drop_work_ms: 0,
+            write_drop_inline: 0,
             plan_blks: 0,
             plan_ms: 0,
             plan_collect_ms: 0,
@@ -1120,6 +1128,8 @@ pub fn sample(
         thr_script_send_wait_ms: ns_ms(w.thr_script_send_wait_ns),
         thr_write_recv_wait_ms: ns_ms(w.thr_write_recv_wait_ns),
         thr_write_work_ms: ns_ms(w.thr_write_work_ns),
+        thr_drop_work_ms: ns_ms(w.thr_drop_work_ns),
+        write_drop_inline: w.write_drop_inline,
         plan_blks: w.lookup_blocks,
         plan_ms: ns_ms(w.lookup_total_ns),
         plan_collect_ms: ns_ms(w.lookup_collect_ns),
