@@ -2481,6 +2481,82 @@ fn write_encodes_seqsigwit_from_wire() {
     let _ = std::fs::remove_dir_all(&path);
 }
 
+/// The write hands its batch back either way. After a connect the caller
+/// still owns the decoded blocks, so it picks the thread that frees them.
+/// After a reject the caller offers the same bodies back.
+#[test]
+fn write_hands_the_batch_back_on_connect_and_on_reject() {
+    use rbitcoin_consensus::mine_empty_regtest;
+    use rbitcoin_primitives::Height;
+    use rbitcoin_query::accept_and_connect_block;
+    use rbitcoin_query::confirm_run::{
+        confirm_scripts_phase, confirm_wire_load_from_plan, confirm_wire_lookup_stamp,
+        confirm_write_phase_or_return, ScriptPreverified, WireBlockIn,
+    };
+    use std::sync::Arc;
+
+    let (path, q) = tmp_query();
+    let params = ChainParams::regtest();
+    let genesis = bitcoin::blockdata::constants::genesis_block(bitcoin::Network::Regtest);
+    accept_and_connect_block(&q, &params, Height::GENESIS, &genesis, Milestone::NONE).unwrap();
+    let b1 = mine_empty_regtest(genesis.block_hash(), genesis.header.time + 600, 1);
+    let b2 = mine_empty_regtest(b1.block_hash(), b1.header.time + 600, 2);
+    let b3 = mine_empty_regtest(b2.block_hash(), b2.header.time + 600, 3);
+    let script_ok = |items: &[WireBlockIn]| {
+        let stamped =
+            confirm_wire_lookup_stamp(&q, &params, Milestone::NONE, items, None).expect("stamp");
+        let mat = confirm_wire_load_from_plan(
+            &q,
+            &params,
+            Milestone::NONE,
+            stamped,
+            None,
+            &ScriptPreverified::new(),
+        )
+        .expect("load");
+        confirm_scripts_phase(mat.batch).expect("scripts").batch
+    };
+
+    let first = [(Height(1), Arc::new(b1), None)];
+    let (_fks, written) =
+        confirm_write_phase_or_return(&q, &params, Milestone::NONE, script_ok(&first))
+            .unwrap_or_else(|(e, _)| panic!("write: {e}"));
+    assert_eq!(q.tip_height(), Some(Height(1)));
+    assert_eq!(written.len(), 1);
+    assert!(
+        Arc::ptr_eq(&written.wire_blocks()[0], &first[0].1),
+        "the connected batch still holds its decoded block"
+    );
+    drop(written);
+    assert_eq!(
+        Arc::strong_count(&first[0].1),
+        1,
+        "dropping the returned batch frees the block"
+    );
+
+    // Height 2 connects behind the batch's back, so the batch spans the tip.
+    let rest = [
+        (Height(2), Arc::new(b2.clone()), None),
+        (Height(3), Arc::new(b3), None),
+    ];
+    let spans = script_ok(&rest);
+    accept_and_connect_block(&q, &params, Height(2), &b2, Milestone::NONE).unwrap();
+    let (err, failed) = confirm_write_phase_or_return(&q, &params, Milestone::NONE, spans)
+        .map(|_| ())
+        .expect_err("a batch that spans the tip is refused");
+    assert!(err.to_string().contains("spans tip"), "{err}");
+    assert_eq!(q.tip_height(), Some(Height(2)));
+    assert!(
+        failed
+            .wire_blocks()
+            .iter()
+            .zip(&rest)
+            .all(|(got, (_, want, _))| Arc::ptr_eq(got, want)),
+        "the refused batch comes back with its bodies"
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
 /// C1: pin reads plan.edges; packed ins may be empty.
 #[test]
 fn pin_plan_edges_without_packed_ins() {

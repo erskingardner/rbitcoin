@@ -268,19 +268,25 @@ pub fn confirm_write_phase(
     milestone: Milestone,
     batch: ScriptOkBatch,
 ) -> Result<Vec<rbitcoin_primitives::Fk>, ConfirmError> {
-    confirm_write_phase_or_return(query, params, milestone, batch).map_err(|(e, _)| e)
+    confirm_write_phase_or_return(query, params, milestone, batch)
+        .map(|(fks, _)| fks)
+        .map_err(|(e, _)| e)
 }
 
-/// [`confirm_write_phase`] that hands the batch back on error, so a caller
-/// that retries the wave can offer its bodies back.
+/// [`confirm_write_phase`] that hands the batch back either way. On error a
+/// caller that retries the wave can offer its bodies back. On success the
+/// caller picks the thread that frees what the write left in the batch.
 #[allow(clippy::result_large_err)] // the batch is the point of the error
 pub fn confirm_write_phase_or_return(
     query: &Query,
     params: &ChainParams,
     milestone: Milestone,
     mut batch: ScriptOkBatch,
-) -> Result<Vec<rbitcoin_primitives::Fk>, (ConfirmError, ScriptOkBatch)> {
-    write_phase(query, params, milestone, &mut batch).map_err(|e| (e, batch))
+) -> Result<(Vec<rbitcoin_primitives::Fk>, ScriptOkBatch), (ConfirmError, ScriptOkBatch)> {
+    match write_phase(query, params, milestone, &mut batch) {
+        Ok(fks) => Ok((fks, batch)),
+        Err(e) => Err((e, batch)),
+    }
 }
 
 #[doc(hidden)]
