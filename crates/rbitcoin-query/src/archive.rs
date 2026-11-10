@@ -585,6 +585,61 @@ pub fn create_pin_approx_bytes(pin: &CreatePin) -> usize {
     n
 }
 
+/// Packed row of each planned create id.
+///
+/// One contiguous id run is the IBD shape, and the row is `id - first`. A
+/// null fk, a gap, a repeat, or ids out of order keep the map, so an id
+/// outside the run does not land on a neighbor's row.
+#[doc(hidden)]
+pub enum PlannedRows {
+    Run { first: u64, len: u64 },
+    Map(crate::U64Map<usize>),
+}
+
+impl PlannedRows {
+    pub fn from_fks(fks: &[Fk]) -> Self {
+        if let Some(first) = contiguous_run_first(fks) {
+            return Self::Run {
+                first,
+                len: fks.len() as u64,
+            };
+        }
+        let mut rows = crate::U64Map::with_capacity_and_hasher(fks.len(), Default::default());
+        for (i, fk) in fks.iter().enumerate() {
+            if let Some(id) = fk.get() {
+                rows.insert(id, i);
+            }
+        }
+        Self::Map(rows)
+    }
+
+    #[inline]
+    pub fn row(&self, create_id: u64) -> Option<usize> {
+        match self {
+            Self::Run { first, len } => create_id
+                .checked_sub(*first)
+                .filter(|i| i < len)
+                .map(|i| i as usize),
+            Self::Map(rows) => rows.get(&create_id).copied(),
+        }
+    }
+}
+
+/// The first id when `fks` is `first, first + 1, …` with no null fk.
+fn contiguous_run_first(fks: &[Fk]) -> Option<u64> {
+    let mut ids = fks.iter().map(|fk| fk.get());
+    let first = ids.next()??;
+    let mut prev = first;
+    for id in ids {
+        let next = prev.checked_add(1)?;
+        if id != Some(next) {
+            return None;
+        }
+        prev = next;
+    }
+    Some(first)
+}
+
 /// Write-ready plan batch from lookup/load to commit (writer).
 ///
 /// Planned create fks match `txs.count()+1…` at plan time; commit fails if the
@@ -727,18 +782,10 @@ impl ArchiveWritePlan {
         if overlay.is_empty() {
             return overlay;
         }
-        let mut idx: crate::U64Map<usize> = crate::U64Map::default();
-        for (i, fk) in self.planned_fks.iter().enumerate() {
-            if let Some(id) = fk.get() {
-                idx.insert(id, i);
-            }
-        }
+        let rows = PlannedRows::from_fks(&self.planned_fks);
         for eds in self.edges.values() {
             for e in eds {
-                let Some(cid) = e.create_fk.get() else {
-                    continue;
-                };
-                let Some(&i) = idx.get(&cid) else {
+                let Some(i) = e.create_fk.get().and_then(|cid| rows.row(cid)) else {
                     continue;
                 };
                 overlay[i].push((e.vout, e.spend_fk, e.vin));
