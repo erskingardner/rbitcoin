@@ -773,7 +773,7 @@ impl ArchiveWritePlan {
         }
     }
 
-    /// Per-packed-row `(vout, spend_fk)` for creates in this plan (Class A overlay).
+    /// Per-packed-row `(vout, spend_fk, vin)` for creates in this plan (Class A overlay).
     ///
     /// Coinbase / external parents are omitted — those slots stay zero until
     /// annotate after tip.
@@ -1178,13 +1178,8 @@ pub fn stamp_wire_plan_txstat(
     if plan.packed.is_empty() {
         return Ok(());
     }
-    let mut idx: crate::U64Map<usize> = crate::U64Map::default();
-    for (i, fk) in plan.planned_fks.iter().enumerate() {
-        if let Some(id) = fk.get() {
-            idx.insert(id, i);
-        }
-    }
-    let vals = store_prevout_values(query, plan, &idx)?;
+    let rows = PlannedRows::from_fks(&plan.planned_fks);
+    let vals = store_prevout_values(query, plan, &rows)?;
     let mut fees = Vec::with_capacity(plan.packed.len());
     let mut sizes = Vec::with_capacity(plan.packed.len());
     for i in 0..plan.packed.len() {
@@ -1197,7 +1192,7 @@ pub fn stamp_wire_plan_txstat(
         let in_sum = if is_cb {
             None
         } else {
-            Some(txstat_in_sum(plan, &idx, &vals, i, n_in)?)
+            Some(txstat_in_sum(plan, &rows, &vals, i, n_in)?)
         };
         let row = plan.packed[i]
             .0
@@ -1222,7 +1217,7 @@ pub fn stamp_wire_plan_txstat(
 pub fn store_prevout_values(
     query: &Query,
     plan: &ArchiveWritePlan,
-    idx: &crate::U64Map<usize>,
+    rows: &PlannedRows,
 ) -> Result<std::collections::HashMap<(u64, u32), u64>, QueryError> {
     let mut by_parent: std::collections::HashMap<u64, Vec<u32>> = std::collections::HashMap::new();
     for fk in &plan.planned_fks {
@@ -1236,7 +1231,7 @@ pub fn store_prevout_values(
             let Some(cid) = e.create_fk.get() else {
                 continue;
             };
-            if idx.get(&cid).is_some() {
+            if rows.row(cid).is_some() {
                 continue;
             }
             by_parent.entry(cid).or_default().push(e.vout);
@@ -1256,7 +1251,7 @@ pub fn store_prevout_values(
 #[doc(hidden)]
 pub fn txstat_in_sum(
     plan: &ArchiveWritePlan,
-    idx: &crate::U64Map<usize>,
+    rows: &PlannedRows,
     vals: &std::collections::HashMap<(u64, u32), u64>,
     i: usize,
     n_in: usize,
@@ -1278,7 +1273,7 @@ pub fn txstat_in_sum(
         if e.create_fk.is_null() {
             return Err(StoreError::Corrupt("invariant: spend missing create_fk"));
         }
-        let val = prevout_value_at(plan, idx, vals, e.create_fk, e.vout)?;
+        let val = prevout_value_at(plan, rows, vals, e.create_fk, e.vout)?;
         in_sum = in_sum
             .checked_add(val)
             .ok_or(StoreError::Corrupt("txstat in_sum overflow"))?;
@@ -1291,7 +1286,7 @@ pub fn txstat_in_sum(
 #[doc(hidden)]
 pub fn prevout_value_at(
     plan: &ArchiveWritePlan,
-    idx: &crate::U64Map<usize>,
+    rows: &PlannedRows,
     vals: &std::collections::HashMap<(u64, u32), u64>,
     create_fk: Fk,
     vout: u32,
@@ -1299,7 +1294,7 @@ pub fn prevout_value_at(
     let Some(cid) = create_fk.get() else {
         return Err(StoreError::Corrupt("invariant: spend missing create_fk"));
     };
-    if let Some(&i) = idx.get(&cid) {
+    if let Some(i) = rows.row(cid) {
         let val = plan.packed[i]
             .0
             .with_out_parts(vout, |val, _| val)
