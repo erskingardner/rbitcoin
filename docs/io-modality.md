@@ -149,7 +149,7 @@ RAM fence (~15 MiB at 1M blocks), not a file.
 |------|-----|----------|
 | Pin outs / body pipeline | `RBITCOIN_IO` | uring/pread on **`txout.body` FD** (Full also zips `seqsigwit`). `group_body_peeks` also merges a hole of at most 64 KiB when the span stays at most 256 KiB. |
 | Head-resolve identity | `RBITCOIN_IO` | uring/pread on **`txid.body`** (not a packed body prefix) |
-| Spend-meta 8 B peeks | `RBITCOIN_IO` | uring/pread on **`spent.body` FD**. Page-grouped with the pin caps (`group_body_peeks`), pipelined at ring depth 128. A singleton stays an 8-byte pread. |
+| Spend-meta 8 B peeks | `RBITCOIN_IO` | uring/pread on **`spent.body` FD**. Page-grouped with the pin caps (`group_body_peeks`), pipelined at ring depth 128. A singleton stays an 8-byte pread. Confirm write issues at most two per batch through this one reader: one on `ibd-confirm-spent` (that thread's own TLS session) while Class A appends, one on the write thread after. |
 | Spend annotate | `RBITCOIN_IO` | 4 KiB page RMW on **`spent.body`** (uring or pwrite, depth 128, one in-flight RMW per page). The sweep sets `POSIX_FADV_RANDOM` and restores `POSIX_FADV_NORMAL` on exit. Unknown meta decides sole / multi / promote inside the same page groups. |
 | Class C create-height | (RAM fence) | no IO |
 | Class A body/idx **linear append** | always | **pwrite** (three stems + three idx). `--datadir-hdd` submits each body stem as its own `pwrite_batch`; otherwise the stems are one wave |

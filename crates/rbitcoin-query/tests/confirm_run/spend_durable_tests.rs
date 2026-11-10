@@ -21,7 +21,7 @@ use rbitcoin_query::accept_and_connect_block;
 
 use rbitcoin_store::spent_abs;
 
-fn coinbase(height: u32) -> Transaction {
+pub(super) fn coinbase(height: u32) -> Transaction {
     let mut ss = if height == 0 {
         vec![0x00]
     } else {
@@ -46,7 +46,7 @@ fn coinbase(height: u32) -> Transaction {
     }
 }
 
-fn spend_one(prev: Txid, val: Amount) -> Transaction {
+pub(super) fn spend_one(prev: Txid, val: Amount) -> Transaction {
     Transaction {
         version: TxVersion::TWO,
         lock_time: LockTime::ZERO,
@@ -66,7 +66,12 @@ fn spend_one(prev: Txid, val: Amount) -> Transaction {
     }
 }
 
-fn mine(prev: bitcoin::BlockHash, time: u32, height: u32, extra: Vec<Transaction>) -> Block {
+pub(super) fn mine(
+    prev: bitcoin::BlockHash,
+    time: u32,
+    height: u32,
+    extra: Vec<Transaction>,
+) -> Block {
     let bits = CompactTarget::from_consensus(0x207f_ffff);
     let mut txdata = vec![coinbase(height)];
     txdata.extend(extra);

@@ -989,14 +989,7 @@ impl BatchParents {
         let id = fk.get()?;
         let e = self.pins.get(&id)?;
         let lay = e.load_layout();
-        let (off, len) = lay.spent_range?;
-        let abs = rbitcoin_store::spent_abs(off, vout);
-        if abs.saturating_add(rbitcoin_store::OutputRecord::SPENT_SLOT_LEN as u64)
-            > off.saturating_add(len)
-        {
-            return None;
-        }
-        Some(abs)
+        spent_slot_abs(lay.spent_range?, vout)
     }
 
     /// Unique `(create_id, vout, abs, spend_fk)` for spend edges. Missing abs is Corrupt.
@@ -1138,6 +1131,19 @@ impl BatchParents {
         }
         None
     }
+}
+
+/// `spent.body` offset of `vout`'s slot in a create's spent range. `None`
+/// when the slot would end past the range.
+pub fn spent_slot_abs(spent_range: (u64, u64), vout: u32) -> Option<u64> {
+    let (off, len) = spent_range;
+    let abs = rbitcoin_store::spent_abs(off, vout);
+    if abs.saturating_add(rbitcoin_store::OutputRecord::SPENT_SLOT_LEN as u64)
+        > off.saturating_add(len)
+    {
+        return None;
+    }
+    Some(abs)
 }
 
 fn union_vouts(checked: &[u32], extra: &[u32]) -> Vec<u32> {

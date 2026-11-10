@@ -11,6 +11,15 @@ fn tmp_query() -> (rbitcoin_query::testutil::TempDir, rbitcoin_query::Query) {
     rbitcoin_query::testutil::tiny_query_labeled("write-idemp")
 }
 
+/// The fill input the write computes in its walk before the Class A append.
+fn fill_need(
+    q: &rbitcoin_query::Query,
+    bp: &rbitcoin_query::BatchParents,
+    prepared: &[rbitcoin_query::confirm_run::Prepared],
+) -> rbitcoin_query::U64Map<Vec<u32>> {
+    rbitcoin_query::confirm_run::spend_abs_before_append(q, bp, prepared, None).need
+}
+
 #[test]
 fn tx_head_drain_thread_is_named_and_reused() {
     use rbitcoin_query::confirm_run::{submit_head_drain, HEAD_DRAIN_THREAD_NAME};
@@ -1347,13 +1356,14 @@ fn fill_same_batch_abs_from_append_loc_ram() {
         prev_mtp: 0,
     }];
     let mut bp = BatchParents::new();
+    let need = fill_need(&q, &bp, &prepared);
     fill_planned_create_layout_after_commit(
         &q,
         &mut bp,
         &fks,
         &loc,
         &[std::sync::Arc::clone(&parent_pin), child_pin],
-        &prepared,
+        &need,
     )
     .expect("same-batch fill from append RAM");
     assert!(bp.has_abs_layout(fks[0]));
@@ -1396,13 +1406,14 @@ fn fill_same_batch_abs_from_append_loc_ram() {
         prev_mtp: 0,
     }];
     let mut bp_multi = BatchParents::new();
+    let need = fill_need(&q, &bp_multi, &multi_prepared);
     fill_planned_create_layout_after_commit(
         &q,
         &mut bp_multi,
         &[multi_fk],
         &[multi_loc],
         &[multi_pin],
-        &multi_prepared,
+        &need,
     )
     .expect("multi-input parent fill");
     assert_eq!(
@@ -1438,7 +1449,8 @@ fn fill_same_batch_abs_from_append_loc_ram() {
         prev_mtp: 0,
     }];
 
-    fill_planned_create_layout_after_commit(&q, &mut bp_later, &[], &[], &[], &later)
+    let need = fill_need(&q, &bp_later, &later);
+    fill_planned_create_layout_after_commit(&q, &mut bp_later, &[], &[], &[], &need)
         .expect("just-written fill from write loc RAM");
     let mut bp_kept = BatchParents::new();
     bp_kept.insert_create_pin(
@@ -1453,7 +1465,8 @@ fn fill_same_batch_abs_from_append_loc_ram() {
     // absent, so the fill still visits this parent. A wider replacement would
     // publish the just-written loc.
     bp_kept.set_spent_range_only(fks[0], (9, 1));
-    fill_planned_create_layout_after_commit(&q, &mut bp_kept, &[], &[], &[], &later)
+    let need = fill_need(&q, &bp_kept, &later);
+    fill_planned_create_layout_after_commit(&q, &mut bp_kept, &[], &[], &[], &need)
         .expect("filled pin keeps its spent range");
     assert_eq!(
         bp_kept.get_spender_abs(fks[0], 0),
@@ -1612,6 +1625,16 @@ fn structural_same_batch_overlay_skips_meta_pread() {
         .confirm_stats()
         .spend_overlay_skip_n
         .load(Ordering::Relaxed);
+    let mut slots = rbitcoin_query::confirm_run::phases::BatchSlots::default();
+    rbitcoin_query::confirm_run::phases::resolve_batch_slots(
+        &q,
+        [(spends.as_slice(), abs_jobs.as_slice())],
+        &rbitcoin_query::block_pipeline::ClassAWave::new(fks.clone()),
+        &rbitcoin_query::block_pipeline::SlotRead::default(),
+        &mut scratch,
+        &mut slots,
+    )
+    .expect("overlay covers the only spend");
     structural_validate_spends(
         &q,
         &block,
@@ -1622,7 +1645,7 @@ fn structural_same_batch_overlay_skips_meta_pread() {
         &bp,
         &mut mtp,
         &run,
-        &rbitcoin_query::block_pipeline::ClassAWave::new(fks.clone()),
+        slots.block(0),
         &mut scratch,
         &abs_jobs,
         None,
@@ -1778,6 +1801,16 @@ fn structural_scratch_second_block_does_not_replay_first_slots() {
                     .map(|&(_, vout, sfk, cfk, vin)| (cfk, vout, sfk, vin)),
             )
             .expect("pin abs");
+        let mut slots = rbitcoin_query::confirm_run::phases::BatchSlots::default();
+        rbitcoin_query::confirm_run::phases::resolve_batch_slots(
+            &q,
+            [(spends.as_slice(), abs_jobs.as_slice())],
+            &rbitcoin_query::block_pipeline::ClassAWave::default(),
+            &rbitcoin_query::block_pipeline::SlotRead::default(),
+            &mut scratch,
+            &mut slots,
+        )
+        .expect("slot read");
         structural_validate_spends(
             &q,
             &block,
@@ -1788,7 +1821,7 @@ fn structural_scratch_second_block_does_not_replay_first_slots() {
             &bp,
             &mut mtp,
             &run,
-            &rbitcoin_query::block_pipeline::ClassAWave::default(),
+            slots.block(0),
             &mut scratch,
             &abs_jobs,
             None,
@@ -1925,7 +1958,8 @@ fn fill_just_written_survives_until_last_started_write() {
         prev_mtp: 0,
     }];
 
-    fill_planned_create_layout_after_commit(&q, &mut bp, &[], &[], &[], &child)
+    let need = fill_need(&q, &bp, &child);
+    fill_planned_create_layout_after_commit(&q, &mut bp, &[], &[], &[], &need)
         .expect("child fill from write loc until last-started write");
     ensure_spend_abs_layouts(&bp, &child).expect("abs until last-started write");
 
@@ -2013,7 +2047,8 @@ fn fill_stamp_spent_hole_from_write_tls() {
         prev_mtp: 0,
     }];
 
-    fill_planned_create_layout_after_commit(&q, &mut bp, &[], &[], &[], &child)
+    let need = fill_need(&q, &bp, &child);
+    fill_planned_create_layout_after_commit(&q, &mut bp, &[], &[], &[], &need)
         .expect("child fill from write TLS after stamp spent hole");
     ensure_spend_abs_layouts(&bp, &child).expect("abs from write TLS");
 
@@ -3591,6 +3626,7 @@ fn structural_run_clears_reused_scratch_between_batches() {
             &bp,
             &jobs,
             &rbitcoin_query::block_pipeline::ClassAWave::default(),
+            &rbitcoin_query::block_pipeline::SlotRead::default(),
             reuse,
         )
         .expect("reused scratch still connects")
