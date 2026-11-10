@@ -14,8 +14,8 @@ pub struct ResolvedWire {
     /// Class A header row from BQ enqueue. Load-split kinds via `has_body(fk)`.
     pub header_fk: u64,
     /// External `(prev_txid, vout)` from the BQ input walk (no coinbase).
-    /// Same-wave creates stay here so a later load chunk can in-flight bind;
-    /// TipOnly / `need_vouts` ∩ wave ids still drop them.
+    /// Prevs lookup left out of TipOnly need stay here so load can in-flight
+    /// bind them; TipOnly / `need_vouts` ∩ wave ids still drop them.
     pub spend_keys: Arc<[([u8; 32], u32)]>,
     /// Peer id given at BQ enqueue ([`crate::Query::block_queue_offer_from`]).
     pub sender: Option<u64>,

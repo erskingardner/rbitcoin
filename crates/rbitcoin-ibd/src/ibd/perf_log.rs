@@ -384,6 +384,9 @@ pub struct IbdPerfSample {
     /// Lookup-wave `create.loc` fill inside TipOnly `head=` (`wave=… loc=`).
     /// One batch after the sealed walk; not on the probe ring.
     pub lookup_wave_spent_ms: u64,
+    /// Inputs lookup left out of TipOnly need: the parent's create is above
+    /// the wave's drain+fence snapshot, so load binds it from in-flight.
+    pub lookup_undrained_skip: u64,
     pub plan_parents: u64,
     pub plan_already: u64,
     pub plan_cold: u64,
@@ -627,6 +630,7 @@ impl Default for IbdPerfSample {
             lookup_wave_head_io_ms: 0,
             lookup_wave_head_preads: 0,
             lookup_wave_spent_ms: 0,
+            lookup_undrained_skip: 0,
             plan_parents: 0,
             plan_already: 0,
             plan_cold: 0,
@@ -1132,6 +1136,7 @@ pub fn sample(
         lookup_wave_head_io_ms: ns_ms(head_res.body_ns.saturating_add(head_res.idx_ns)),
         lookup_wave_head_preads: head_res.body_lookups,
         lookup_wave_spent_ms: ns_ms(head_res.idx_ns),
+        lookup_undrained_skip: w.lookup_undrained_skip,
         plan_parents: w.lookup_parents,
         plan_already: w.lookup_already,
         plan_cold: w.lookup_cold,
