@@ -33,6 +33,30 @@ pub const BQ_RESOLVE_WAVE_MIN_INPUTS: u32 = 8000;
 /// Safety cap so one megablock run cannot stall the wave.
 pub const BQ_RESOLVE_WAVE_MAX_KEYS: usize = 256_000;
 
+/// Creates a wave leaves out of its TipOnly need. The lookup thread owns it
+/// and a wave starts it empty.
+#[derive(Debug, Default)]
+pub struct UndrainedCreates {
+    txids: HashSet<[u8; 32], BuildHasherDefault<TxidHasher>>,
+}
+
+impl UndrainedCreates {
+    #[doc(hidden)]
+    pub fn txids(&self) -> &HashSet<[u8; 32], BuildHasherDefault<TxidHasher>> {
+        &self.txids
+    }
+
+    #[doc(hidden)]
+    pub fn begin_wave(&mut self) {
+        self.txids.clear();
+    }
+
+    #[doc(hidden)]
+    pub fn note_block(&mut self, pres: &[TxPrecompute]) {
+        self.txids.extend(pres.iter().map(|p| p.txid));
+    }
+}
+
 /// Stop before another height once the key cap is hit and this wave already
 /// has a height. An empty `done` still emits the height that filled the cap.
 #[doc(hidden)]
@@ -197,13 +221,12 @@ pub fn confirm_bq_resolve_wave_capped(
     heights: &[u32],
     max_blocks: usize,
     max_inputs: u32,
+    undrained: &mut UndrainedCreates,
 ) -> Result<BqResolveWave, ConfirmError> {
     let t0 = Instant::now();
     let mut stats = BqResolveWaveStats::default();
     let mut done: Vec<u32> = Vec::new();
     let mut all_keys: HashSet<[u8; 32], BuildHasherDefault<TxidHasher>> =
-        HashSet::with_hasher(BuildHasherDefault::default());
-    let mut wave_creates: HashSet<[u8; 32], BuildHasherDefault<TxidHasher>> =
         HashSet::with_hasher(BuildHasherDefault::default());
     let mut wires: Vec<(u32, [u8; 32], ResolvedWire)> = Vec::new();
 
@@ -280,6 +303,7 @@ pub fn confirm_bq_resolve_wave_capped(
         }
     }
 
+    undrained.begin_wave();
     let mut undecodable = None;
     for &h in &selected {
         if stop_for_key_cap(all_keys.len(), done.len()) {
@@ -328,15 +352,13 @@ pub fn confirm_bq_resolve_wave_capped(
             continue;
         };
         let t_col = Instant::now();
-        for p in pres.iter() {
-            wave_creates.insert(p.txid);
-        }
+        undrained.note_block(pres.as_ref());
         let spends = push_resolve_keys(
             params,
             h,
             block.as_ref(),
             pres.as_ref(),
-            &wave_creates,
+            undrained.txids(),
             &mut all_keys,
             n_inputs_at.get(&h).copied().unwrap_or(0),
         );
