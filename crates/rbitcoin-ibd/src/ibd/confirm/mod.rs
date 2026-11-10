@@ -14,6 +14,9 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering}
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[doc(hidden)]
+pub mod drop_thread;
+
 /// Load-thread pipeline caches so load(N+1) can run while write(N) has not advanced tip.
 ///
 /// In-flight creates are one [`rbitcoin_query::InFlight`] map this thread owns:
@@ -63,10 +66,7 @@ impl LoadAheadState {
         queues: &ConfirmQueueDepths,
     ) {
         let (.., inflight_bytes) = self.in_flight.size_snapshot();
-        let pipe = queues.content_snap();
-        let wire = (pipe.load_wire_bytes as u64)
-            .saturating_add(pipe.script_wire_bytes as u64)
-            .saturating_add(pipe.write_wire_bytes as u64);
+        let wire = queues.content_snap().wire_bytes();
         let accounted = AccountedHeap::from_hub(hub, inflight_bytes, wire).bytes();
         let would_drop = self
             .in_flight
@@ -1403,6 +1403,9 @@ pub struct ConfirmQueueDepths {
     pub write_wire_bytes: AtomicUsize,
     /// Sum of `BatchParents` entries in scripts→write (entry count, not unique Arc).
     pub write_parents: AtomicUsize,
+    /// Approx wire bytes of written batches not yet freed: the one waiting
+    /// for `ibd-confirm-drop` and the one it is freeing.
+    pub drop_wire_bytes: AtomicUsize,
 }
 
 /// Snapshot of confirm pipeline retain (queue depths + batch contents + feed).
@@ -1422,11 +1425,21 @@ pub struct ConfirmPipelineSizes {
     pub write_blocks: usize,
     pub write_wire_bytes: usize,
     pub write_parents: usize,
+    pub drop_wire_bytes: usize,
     pub feed_ready: usize,
     pub feed_inflight: usize,
 }
 
 impl ConfirmPipelineSizes {
+    /// Decoded wire the pipeline holds: the three queues and written
+    /// batches not yet freed. The confirm-queue wire of [`AccountedHeap`].
+    pub fn wire_bytes(&self) -> u64 {
+        (self.load_wire_bytes as u64)
+            .saturating_add(self.script_wire_bytes as u64)
+            .saturating_add(self.write_wire_bytes as u64)
+            .saturating_add(self.drop_wire_bytes as u64)
+    }
+
     /// Parent entries sitting in scriptq + writeq (pipeline-wide, no budget).
     #[cfg(debug_assertions)]
     #[inline]
@@ -1509,6 +1522,7 @@ impl ConfirmQueueDepths {
             write_blocks: self.write_blocks.load(Ordering::Relaxed),
             write_wire_bytes: self.write_wire_bytes.load(Ordering::Relaxed),
             write_parents: self.write_parents.load(Ordering::Relaxed),
+            drop_wire_bytes: self.drop_wire_bytes.load(Ordering::Relaxed),
             feed_ready: 0,
             feed_inflight: 0,
         }
@@ -2037,6 +2051,12 @@ pub mod confirm_thr_stats {
     pub fn add_write_work(stats: &rbitcoin_query::ConfirmStats, d: Duration) {
         rbitcoin_query::note_confirm_dur(&stats.thr_write_work_ns, d);
     }
+
+    /// `ibd-confirm-drop` freeing a written batch. Not part of write work.
+    #[inline]
+    pub fn add_drop_work(stats: &rbitcoin_query::ConfirmStats, d: Duration) {
+        rbitcoin_query::note_confirm_dur(&stats.thr_drop_work_ns, d);
+    }
 }
 
 /// True when a write batch's first height is no longer tip+1 (rewind raced).
@@ -2070,6 +2090,11 @@ pub fn spawn_confirm_engine(
 ) -> (std::thread::JoinHandle<()>, Arc<ConfirmQueueDepths>) {
     let queues = ConfirmQueueDepths::new();
     let caps = confirm_queue_caps();
+    let drops = drop_thread::DropThread::spawn(drop_thread::DROP_QUEUE_CAP, {
+        let stats = hub.query.confirm_stats_arc();
+        move |d| confirm_thr_stats::add_drop_work(&stats, d)
+    })
+    .expect("spawn ibd-confirm-drop");
     type ScriptsIn = (rbitcoin_query::LoadedBatch, u64);
     let (mat_tx, mat_rx) = std::sync::mpsc::sync_channel::<ScriptsIn>(caps.script);
     let (write_tx, write_rx) =
@@ -2098,7 +2123,7 @@ pub fn spawn_confirm_engine(
             let stats = hub_wb.query.confirm_stats_arc();
             let _detach = ConfirmWriteDetach(&hub_wb.query);
             // Non-contig leftover already note_write_recv'd; write it next iter.
-            let mut leftover: Option<rbitcoin_query::ScriptOkBatch> = None;
+            let mut leftover: Option<(rbitcoin_query::ScriptOkBatch, usize)> = None;
             let mut pending_clear: Option<ArchivedBodyClear> = None;
             loop {
                 if let Some(clear) = pending_clear.take() {
@@ -2106,15 +2131,15 @@ pub fn spawn_confirm_engine(
                     continue;
                 }
                 let t_recv = Instant::now();
-                let first = match leftover.take() {
-                    Some(b) => b,
+                let (first, mut wire) = match leftover.take() {
+                    Some(held) => held,
                     None => match write_rx.recv_timeout(Duration::from_millis(200)) {
                         Ok(rbitcoin_query::ConfirmWriteMsg::Batch(b)) => {
                             let n = b.len();
                             let wire = b.approx_wire_bytes();
                             let parents = b.parent_count();
                             q_wb.note_write_recv(n, wire, parents);
-                            b
+                            (b, wire)
                         }
                         Ok(rbitcoin_query::ConfirmWriteMsg::ClearArchived { hash, reply }) => {
                             finish_archived_clear(
@@ -2134,18 +2159,24 @@ pub fn spawn_confirm_engine(
                         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                     },
                 };
+                let mut last_wire = wire;
                 let (batch, parts, next_left, clear) = drain_script_ok_write_queue(
                     first,
                     &write_rx,
                     write_drain_max_parts(write_queue_cap()),
                     |b| {
                         let n = b.len();
-                        let wire = b.approx_wire_bytes();
+                        last_wire = b.approx_wire_bytes();
                         let parents = b.parent_count();
-                        q_wb.note_write_recv(n, wire, parents);
+                        q_wb.note_write_recv(n, last_wire, parents);
+                        wire = wire.saturating_add(last_wire);
                     },
                 );
-                leftover = next_left;
+                // A part that did not merge is the last one the drain counted.
+                leftover = next_left.map(|left| {
+                    wire = wire.saturating_sub(last_wire);
+                    (left, last_wire)
+                });
                 pending_clear = clear;
                 confirm_thr_stats::add_write_recv_wait(&stats, t_recv.elapsed());
                 if feed_wb.stopped() || hub_wb.query.confirm_cancelled() {
@@ -2180,7 +2211,12 @@ pub fn spawn_confirm_engine(
                 let mp_hold = hub_wb.mempool().cloned();
                 let mut template_hold = mp_hold.as_ref().map(|mp| mp.template_hold());
                 match write_batch_trusted(&hub_wb, batch) {
-                    Ok(_fks) => {
+                    Ok((_fks, written)) => {
+                        if drops.retire(q_wb.hold_for_drop(written, wire))
+                            == drop_thread::DropSite::Inline
+                        {
+                            rbitcoin_query::note_confirm(&stats.write_drop_inline, 1);
+                        }
                         if let Err(e) =
                             hub_wb.note_confirmed_tip_while(&meta, &headers, template_hold.as_mut())
                         {
@@ -3298,13 +3334,14 @@ pub fn note_confirm_bulk_read() {
     });
 }
 
-/// The write batch's error carries the batch so the caller can offer it back.
+/// The batch comes back either way: with the error so the caller can offer
+/// its bodies back, and after a connect so the caller frees it elsewhere.
 #[allow(clippy::result_large_err)]
 fn write_batch_trusted(
     hub: &rbitcoin_net::ChainHub,
     batch: rbitcoin_query::ScriptOkBatch,
 ) -> Result<
-    Vec<rbitcoin_primitives::Fk>,
+    (Vec<rbitcoin_primitives::Fk>, rbitcoin_query::ScriptOkBatch),
     (rbitcoin_query::ConfirmError, rbitcoin_query::ScriptOkBatch),
 > {
     rbitcoin_query::confirm_run::waive_batch(hub.query.trust_peer(), || {
