@@ -1548,6 +1548,7 @@ fn pin_head_parent_via_waves_and_leftover_stamp(
             &[h],
             BQ_RESOLVE_WAVE_MAX_BLOCKS,
             BQ_RESOLVE_WAVE_MAX_INPUTS,
+            &mut rbitcoin_query::UndrainedCreates::default(),
         )
         .unwrap()
     };
@@ -2091,6 +2092,7 @@ fn pin_abandoned_fork_is_not_a_parent(
         &[tip_h + 1],
         BQ_RESOLVE_WAVE_MAX_BLOCKS,
         BQ_RESOLVE_WAVE_MAX_INPUTS,
+        &mut rbitcoin_query::UndrainedCreates::default(),
     )
     .unwrap();
     assert_eq!(wave.stats.heights, 1);
@@ -3306,6 +3308,7 @@ fn pin_bq_wave_then_stamp_confirms_empty_block(
         &[h],
         BQ_RESOLVE_WAVE_MAX_BLOCKS,
         BQ_RESOLVE_WAVE_MAX_INPUTS,
+        &mut rbitcoin_query::UndrainedCreates::default(),
     )
     .unwrap();
     assert!(take_wave_items_for_load(q, &wave.items, q.lookup_taken_gen()).unwrap());

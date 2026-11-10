@@ -3168,6 +3168,7 @@ pub fn spawn_confirm_engine(
             let stats = hub.query.confirm_stats_arc();
             let mut disco_seen = 0u64;
             let mut lookup_faults = LookupFaultPolicy::default();
+            let mut undrained = rbitcoin_query::UndrainedCreates::default();
             loop {
                 if feed.stopped() {
                     break;
@@ -3263,6 +3264,7 @@ pub fn spawn_confirm_engine(
                         &wave_h,
                         max_blocks,
                         max_inputs,
+                        &mut undrained,
                     ) {
                         Ok(wave) if wave.items.is_empty() && wave.undecodable.is_none() => {
                             lookup_faults.on_success();
@@ -3606,10 +3608,11 @@ pub fn lookup_bulk_wave(
     heights: &[u32],
     max_blocks: usize,
     max_inputs: u32,
+    undrained: &mut rbitcoin_query::UndrainedCreates,
 ) -> Result<rbitcoin_query::BqResolveWave, rbitcoin_query::ConfirmError> {
     wait_bulk_spindle(query);
     rbitcoin_query::confirm_bq_resolve_wave_capped(
-        query, params, milestone, heights, max_blocks, max_inputs,
+        query, params, milestone, heights, max_blocks, max_inputs, undrained,
     )
 }
 
