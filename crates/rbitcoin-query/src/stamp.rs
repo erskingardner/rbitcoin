@@ -4,8 +4,8 @@
 //! plan=None / S0 (`skeleton = None`) is in-flight → leftover TipOnly.
 //! One function for S0 plan (`archive_plan_batch_from_wire`) and plan=None
 //! rehydrate. In-flight holds CreatePins until load drops map rows below a
-//! lookup-wave drain+fence snapshot taken before TipOnly. Same-wave creates are
-//! omitted from that skeleton. Class A `CreatePin::set_loc` after append;
+//! lookup-wave drain+fence snapshot taken before TipOnly. Creates above that
+//! snapshot are omitted from that skeleton. Class A `CreatePin::set_loc` after append;
 //! later-wave stamp reads pin loc. IBD (`skeleton = Some`) never loc-by-fk
 //! here: spent is pin loc, skeleton TipOnly loc, or unset for write fill. The
 //! all-archived retry (`stamp_parent_pin_archived`) loc-fills its archived
@@ -179,8 +179,9 @@ pub fn external_parent_stamp(need_len: usize) -> ExternalParentStamp {
 ///
 /// `skeleton = Some` is the IBD path: miss of in-flight and skeleton is
 /// `Corrupt` with no leftover `tx.head` probe. In-flight identity still takes
-/// skeleton loc when TipOnly already has that create (later wave). Same-wave
-/// creates are omitted from the skeleton; those holes stay for write fill.
+/// skeleton loc when TipOnly already has that create (later wave). Creates
+/// above the wave's snapshot are omitted from the skeleton; those holes stay
+/// for write fill.
 /// IBD never loc-by-fk: pin loc unset and skeleton miss leaves spent unset
 /// (write TLS / late `set_loc`).
 /// `skeleton = None` is

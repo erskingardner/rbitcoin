@@ -280,6 +280,7 @@ confirm_window! {
     lookup_precompute_ns,
     lookup_wave_head_ns,
     lookup_wave_spent_ns,
+    lookup_undrained_skip,
     stamp_struct_ns,
     stamp_struct_txid_ns,
     stamp_struct_wtxid_ns,
@@ -587,6 +588,11 @@ impl ConfirmStats {
         add(&self.lookup_collect_ns, collect_ns);
         add(&self.lookup_wave_head_ns, head_ns);
         add(&self.lookup_wave_spent_ns, spent_ns);
+    }
+
+    /// Inputs a lookup wave left out of its TipOnly need.
+    pub fn note_wave_undrained_skip(&self, n: u64) {
+        add(&self.lookup_undrained_skip, n);
     }
 }
 
