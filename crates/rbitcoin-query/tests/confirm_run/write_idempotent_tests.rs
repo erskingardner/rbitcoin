@@ -13,10 +13,11 @@ fn tmp_query() -> (rbitcoin_query::testutil::TempDir, rbitcoin_query::Query) {
 
 /// The fill input the write computes in its walk before the Class A append.
 fn fill_need(
+    q: &rbitcoin_query::Query,
     bp: &rbitcoin_query::BatchParents,
     prepared: &[rbitcoin_query::confirm_run::Prepared],
 ) -> rbitcoin_query::U64Map<Vec<u32>> {
-    rbitcoin_query::confirm_run::spend_abs_before_append(bp, prepared, None).need
+    rbitcoin_query::confirm_run::spend_abs_before_append(q, bp, prepared, None).need
 }
 
 #[test]
@@ -1355,7 +1356,7 @@ fn fill_same_batch_abs_from_append_loc_ram() {
         prev_mtp: 0,
     }];
     let mut bp = BatchParents::new();
-    let need = fill_need(&bp, &prepared);
+    let need = fill_need(&q, &bp, &prepared);
     fill_planned_create_layout_after_commit(
         &q,
         &mut bp,
@@ -1405,7 +1406,7 @@ fn fill_same_batch_abs_from_append_loc_ram() {
         prev_mtp: 0,
     }];
     let mut bp_multi = BatchParents::new();
-    let need = fill_need(&bp_multi, &multi_prepared);
+    let need = fill_need(&q, &bp_multi, &multi_prepared);
     fill_planned_create_layout_after_commit(
         &q,
         &mut bp_multi,
@@ -1448,7 +1449,7 @@ fn fill_same_batch_abs_from_append_loc_ram() {
         prev_mtp: 0,
     }];
 
-    let need = fill_need(&bp_later, &later);
+    let need = fill_need(&q, &bp_later, &later);
     fill_planned_create_layout_after_commit(&q, &mut bp_later, &[], &[], &[], &need)
         .expect("just-written fill from write loc RAM");
     let mut bp_kept = BatchParents::new();
@@ -1464,7 +1465,7 @@ fn fill_same_batch_abs_from_append_loc_ram() {
     // absent, so the fill still visits this parent. A wider replacement would
     // publish the just-written loc.
     bp_kept.set_spent_range_only(fks[0], (9, 1));
-    let need = fill_need(&bp_kept, &later);
+    let need = fill_need(&q, &bp_kept, &later);
     fill_planned_create_layout_after_commit(&q, &mut bp_kept, &[], &[], &[], &need)
         .expect("filled pin keeps its spent range");
     assert_eq!(
@@ -1957,7 +1958,7 @@ fn fill_just_written_survives_until_last_started_write() {
         prev_mtp: 0,
     }];
 
-    let need = fill_need(&bp, &child);
+    let need = fill_need(&q, &bp, &child);
     fill_planned_create_layout_after_commit(&q, &mut bp, &[], &[], &[], &need)
         .expect("child fill from write loc until last-started write");
     ensure_spend_abs_layouts(&bp, &child).expect("abs until last-started write");
@@ -2046,7 +2047,7 @@ fn fill_stamp_spent_hole_from_write_tls() {
         prev_mtp: 0,
     }];
 
-    let need = fill_need(&bp, &child);
+    let need = fill_need(&q, &bp, &child);
     fill_planned_create_layout_after_commit(&q, &mut bp, &[], &[], &[], &need)
         .expect("child fill from write TLS after stamp spent hole");
     ensure_spend_abs_layouts(&bp, &child).expect("abs from write TLS");

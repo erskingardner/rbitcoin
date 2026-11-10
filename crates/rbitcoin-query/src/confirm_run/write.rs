@@ -364,7 +364,7 @@ fn write_phase_inner(
         .as_ref()
         .and_then(|plan| plan.planned_fks.iter().filter_map(|fk| fk.get()).min());
     let super::SpendAbsAhead { abs, need } =
-        super::spend_abs_before_append(&batch.batch_parents, &batch.prepared, first_planned);
+        super::spend_abs_before_append(query, &batch.batch_parents, &batch.prepared, first_planned);
     let ahead_walk_ns = t_ahead.elapsed().as_nanos() as u64;
     let ahead = start_spent_ahead(query, abs);
 

@@ -323,6 +323,89 @@ fn second_spend_inside_one_write_batch_is_rejected() {
     assert_eq!(chain.q.tip_height(), Some(Height(h)));
 }
 
+/// IBD loads a batch while its parents' batch is still waiting for write.
+/// Lookup cannot stamp those parents' spent range: the write thread's loc
+/// window gives it. The previous write archived and annotated them, so
+/// their slots are read ahead too, not after the append.
+#[test]
+fn parent_from_the_previous_write_is_read_ahead() {
+    use rbitcoin_query::{confirm_wire_load_phase_pipelined, InFlight, WireLoadPipeline};
+
+    let mut chain = Chain::new("spent-ahead-window", 2, false);
+    let h = chain.height;
+    let x = chain.spend(0, 49_0000_0000);
+    let x_id = x.compute_txid();
+    let a = chain.next(vec![x]);
+    let b = chain.next(vec![
+        spend_one(x_id, Amount::from_sat(48_0000_0000)),
+        chain.spend(1, 49_0000_0000),
+    ]);
+    let slices = [(Height(h + 1), a), (Height(h + 2), b)];
+
+    let none = ScriptPreverified::new();
+    let mut inflight = InFlight::new();
+    let mut next_tx_start = chain.q.tx_body_count().saturating_add(1).max(1);
+    let mut loaded: Vec<ScriptOkBatch> = Vec::new();
+    for (i, slice) in slices.chunks(1).enumerate() {
+        let pipe = WireLoadPipeline {
+            path_lo: slice[0].0 .0,
+            parent_hash: i
+                .checked_sub(1)
+                .map(|p| slices[p].1.block_hash().to_byte_array()),
+            next_tx_start,
+            in_flight: &inflight,
+            skeleton: None,
+            carried_need: Vec::new(),
+            carried_header_fks: Vec::new(),
+            carried_header_hashes: Vec::new(),
+        };
+        let mat = confirm_wire_load_phase_pipelined(
+            &chain.q,
+            &chain.params,
+            MS,
+            slice,
+            &none,
+            Some(&pipe),
+        )
+        .expect("load ahead of write");
+        let plan = mat.batch.archive_plan.as_ref().expect("wire plan");
+        inflight.note_pins(
+            plan.planned_fks.iter().copied().zip(plan.batch_pin.iter()),
+            Some(slice[0].0 .0),
+        );
+        if let Some(last) = plan.planned_fks.last().and_then(|f| f.get()) {
+            next_tx_start = last + 1;
+        }
+        loaded.push(confirm_scripts_phase(mat.batch).expect("scripts").batch);
+    }
+    let batch_b = loaded.pop().unwrap();
+    let batch_a = loaded.pop().unwrap();
+
+    confirm_write_phase(&chain.q, &chain.params, MS, batch_a).expect("write A");
+    let before = chain.slot_reads();
+    confirm_write_phase(&chain.q, &chain.params, MS, batch_b).expect("write B");
+    assert_eq!(
+        chain.slot_reads().since(before),
+        SlotReads {
+            reads: 1,
+            slots: 2,
+            ahead: 2
+        },
+        "the stamped parent and the just-written parent, both ahead"
+    );
+    assert_eq!(chain.q.tip_height(), Some(Height(h + 2)));
+    assert!(chain.q.is_outpoint_spent(x_id.as_byte_array(), 0).unwrap());
+
+    let respend = chain.next(vec![spend_one(x_id, Amount::from_sat(47_0000_0000))]);
+    let err =
+        rbitcoin_query::confirm_wire_run(&chain.q, &chain.params, MS, &[(Height(h + 3), respend)])
+            .expect_err("the just-written parent's spend is annotated");
+    assert!(
+        matches!(err, ConfirmError::Rules(ConsensusError::PrevoutSpent)),
+        "{err}"
+    );
+}
+
 /// The read ahead fails after Class A appended. That is the write's error:
 /// the write thread does not read those slots itself instead. The append
 /// stays on disk with its header ranges, so the retry runs with no plan,
@@ -621,7 +704,8 @@ mod unit {
                 ],
             ),
         ];
-        let got = spend_abs_before_append(&bp, &blocks, Some(7));
+        let (_dir, q) = rbitcoin_query::testutil::tiny_query_labeled("spent-ahead-walk");
+        let got = spend_abs_before_append(&q, &bp, &blocks, Some(7));
         assert_eq!(
             got.abs,
             vec![
@@ -641,9 +725,67 @@ mod unit {
         );
 
         // No plan: this write appends nothing, so fk 7 was archived earlier too.
-        let got = spend_abs_before_append(&bp, &blocks, None);
+        let got = spend_abs_before_append(&q, &bp, &blocks, None);
         assert_eq!(got.abs.len(), 5);
         assert_eq!(got.abs[4], spent_abs(3000, 0));
+
+        // An earlier write on this thread appended fk 8: its loc is still in
+        // the write window. Fill stamps it after the append, so it stays a
+        // need, and its slots are read ahead at the offsets fill will stamp.
+        let loc8 = rbitcoin_store::CreateLocPair {
+            txout: (500, 40),
+            spent: (4000, 2 * SLOT),
+            n_out: 2,
+        };
+        q.note_write_create_loc(&[Fk(8)], &[loc8], 9);
+        let got = spend_abs_before_append(&q, &bp, &blocks, Some(9));
+        assert_eq!(
+            got.abs,
+            vec![
+                spent_abs(1000, 0),
+                spent_abs(2000, 0),
+                spent_abs(4000, 0),
+                spent_abs(1000, 1),
+                spent_abs(2000, 0),
+                spent_abs(3000, 0),
+                spent_abs(4000, 1),
+            ],
+            "the window parent takes its place in edge order"
+        );
+        let mut need: Vec<(u64, Vec<u32>)> = got.need.into_iter().collect();
+        need.sort();
+        assert_eq!(need, vec![(8, vec![0, 1])], "the walk stamps nothing");
+        assert_eq!(bp.get_spender_abs(Fk(8), 0), None);
+
+        // With no plan nothing is filled, so nothing is read on the window's word.
+        let got = spend_abs_before_append(&q, &bp, &blocks, None);
+        assert_eq!(got.abs.len(), 5);
+
+        // Fill leaves two window parents alone, so neither is read ahead:
+        // fk 6 has a stamped range too short for the vout, and fk 4 is not
+        // pinned on this batch.
+        let one = rbitcoin_store::CreateLocPair {
+            txout: (600, 20),
+            spent: (6000, SLOT),
+            n_out: 1,
+        };
+        bp.insert_owned(Fk(6), rec_tx(6, 1), out(1), vec![0], None, None, vec![]);
+        bp.set_spent_range_only(Fk(6), (5000, 1));
+        q.note_write_create_loc(&[Fk(6)], &[one], 8);
+        q.note_write_create_loc(&[Fk(4)], &[one], 7);
+        let left_alone = [prepared(
+            12,
+            vec![
+                ([6; 32], 0, Fk(24), Fk(6), 0),
+                ([4; 32], 0, Fk(24), Fk(4), 1),
+            ],
+        )];
+        let got = spend_abs_before_append(&q, &bp, &left_alone, Some(9));
+        assert!(got.abs.is_empty(), "{:?}", got.abs);
+        let mut need: Vec<(u64, Vec<u32>)> = got.need.into_iter().collect();
+        need.sort();
+        assert_eq!(need, vec![(4, vec![0]), (6, vec![0])]);
+        rbitcoin_query::write_create_loc::clear();
     }
 
     struct Parents {

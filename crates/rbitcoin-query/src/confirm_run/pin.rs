@@ -485,8 +485,8 @@ pub struct SpendAbsAhead {
     /// `spent.body` offsets of parents an earlier write archived, in block
     /// order. A repeat inside one block is one offset.
     pub abs: Vec<u64>,
-    /// Creates with no slot offset yet, with the vouts spent. Fill stamps
-    /// these after the append.
+    /// Creates with no stamped slot offset, with the vouts spent. Fill
+    /// stamps these after the append.
     pub need: U64Map<Vec<u32>>,
 }
 
@@ -495,8 +495,15 @@ pub struct SpendAbsAhead {
 /// `first_planned` is the lowest create fk this write appends. A parent
 /// below it was archived by an earlier write: its slot is on disk and does
 /// not change until this write's spend annotate, so it can be read while
-/// Class A appends. A parent at or above it is read after the append.
+/// Class A appends. Its offset is the stamped one, or, for a parent the
+/// previous writes archived after this batch was loaded, the one fill will
+/// stamp from the write loc window. A parent at or above `first_planned` is
+/// read after the append.
+///
+/// This walk stamps nothing. Fill and [`collect_spend_abs_after_fill`] still
+/// decide every job's offset.
 pub fn spend_abs_before_append(
+    query: &Query,
     batch_parents: &crate::BatchParents,
     prepared: &[Prepared],
     first_planned: Option<u64>,
@@ -506,24 +513,46 @@ pub fn spend_abs_before_append(
         need: U64Map::default(),
     };
     let mut seen = crate::U64Set::default();
-    for p in prepared {
-        seen.clear();
-        for &(_txid, vout, sfk, cfk, _vin) in &p.spends {
-            let Some(id) = cfk.get() else {
-                continue;
-            };
-            match batch_parents.get_spender_abs(cfk, vout) {
-                Some(abs) => {
-                    if first_planned.is_none_or(|lo| id < lo) && seen.insert(abs) {
-                        out.abs.push(abs);
-                    }
+    crate::write_create_loc::with_ram(query, |window| {
+        for p in prepared {
+            seen.clear();
+            for &(_txid, vout, sfk, cfk, _vin) in &p.spends {
+                let Some(id) = cfk.get() else {
+                    continue;
+                };
+                let stamped = batch_parents.get_spender_abs(cfk, vout);
+                let hole = stamped.is_none() && !sfk.is_null();
+                if hole {
+                    out.need.entry(id).or_default().push(vout);
                 }
-                None if sfk.is_null() => {}
-                None => out.need.entry(id).or_default().push(vout),
+                let abs = match first_planned {
+                    Some(lo) if id >= lo => None,
+                    Some(_) if hole => just_written_abs(window, batch_parents, cfk, vout),
+                    _ => stamped,
+                };
+                if abs.is_some_and(|abs| seen.insert(abs)) {
+                    out.abs.extend(abs);
+                }
             }
         }
-    }
+    });
     out
+}
+
+/// The slot offset fill will stamp from the write loc window: the parent is
+/// pinned, has no spent range yet, and an earlier write on this thread
+/// appended it. Same conditions as fill, so the offset read ahead is the
+/// offset the job gets.
+fn just_written_abs(
+    window: &crate::write_create_loc::WriteCreateLocRam,
+    batch_parents: &crate::BatchParents,
+    fk: rbitcoin_primitives::Fk,
+    vout: u32,
+) -> Option<u64> {
+    if !batch_parents.contains(fk) || batch_parents.has_abs_layout(fk) {
+        return None;
+    }
+    crate::batch_parents::spent_slot_abs(window.get(fk)?.spent, vout)
 }
 
 /// One `spend_abs_jobs` walk per prepared block, after fill has stamped ranges.
