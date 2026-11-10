@@ -5,8 +5,11 @@
 //! no process Weak registry.
 //!
 //! **Immutable publish:** outs and layout are **separate** immutable Arc
-//! snapshots. Vacant `insert_owned` stores Frozen halves (no `ArcSwap`). First
-//! real compose promotes that half to `ArcSwap` (lock-free load; RCU store).
+//! snapshots, each behind its own mutex ([`PinHalf`]). A load clones the
+//! `Arc`. A publish composes the next snapshot from the current one under
+//! that lock, so a concurrent widen merges, and the pin holds one snapshot
+//! per half. Neither a publish nor a pin drop depends on how many threads
+//! the process has (no `ArcSwap` per pin).
 //! Widening need-vouts composes only the outs half; layout fill composes only
 //! denserels/range — never clones script bytes for a layout-only publish.
 //! No-op compose keeps Arc identity (no full-body clone on share hits). Never
@@ -20,13 +23,12 @@
 //!
 //! Create heights are not stashed — write re-reads the height fence.
 
-use arc_swap::ArcSwap;
 use rbitcoin_primitives::Fk;
 use rbitcoin_store::{OutputRecord, StoreError, TxRecord};
 use std::cell::RefCell;
 use std::hash::BuildHasherDefault;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 pub use rbitcoin_store::{FkMap, FkSet, U32Map, U64Map, U64Set};
 
@@ -338,47 +340,36 @@ impl ParentLayout {
     }
 }
 
-/// Frozen until the first real compose, then [`ArcSwap`] RCU.
+/// One immutable snapshot behind a mutex.
+///
+/// The lock is held for a refcount bump on `load` and across the compose on
+/// `publish`, so a reader of this half waits out a publish in progress. That
+/// is the trade for a publish and a drop that touch only this half. An
+/// `ArcSwap` here costs more: its store and its drop each walk every thread
+/// that has used `arc-swap`, once per pin.
 #[derive(Debug)]
 #[doc(hidden)]
-pub struct PinHalf<T> {
-    pub frozen: Arc<T>,
-    pub rcu: OnceLock<ArcSwap<T>>,
-}
+pub struct PinHalf<T>(Mutex<Arc<T>>);
 
 impl<T> PinHalf<T> {
-    #[doc(hidden)]
-    pub fn new(val: T) -> Self {
-        Self {
-            frozen: Arc::new(val),
-            rcu: OnceLock::new(),
-        }
+    fn new(val: T) -> Self {
+        Self(Mutex::new(Arc::new(val)))
+    }
+
+    fn slot(&self) -> MutexGuard<'_, Arc<T>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     #[inline]
-    #[doc(hidden)]
-    pub fn load(&self) -> Arc<T> {
-        match self.rcu.get() {
-            Some(s) => s.load_full(),
-            None => Arc::clone(&self.frozen),
-        }
+    fn load(&self) -> Arc<T> {
+        Arc::clone(&self.slot())
     }
 
-    #[doc(hidden)]
-    pub fn rcu(&self, f: impl Fn(&Arc<T>) -> Arc<T>) {
-        loop {
-            if let Some(s) = self.rcu.get() {
-                s.rcu(|cur| f(cur));
-                return;
-            }
-            let cur = Arc::clone(&self.frozen);
-            let next = f(&cur);
-            if Arc::ptr_eq(&next, &cur) {
-                return;
-            }
-            if self.rcu.set(ArcSwap::from(next)).is_ok() {
-                return;
-            }
+    /// `compose` sees the current snapshot. `None` keeps it and its `Arc`.
+    fn publish(&self, compose: impl FnOnce(&T) -> Option<T>) {
+        let mut slot = self.slot();
+        if let Some(next) = compose(&slot) {
+            *slot = Arc::new(next);
         }
     }
 }
@@ -386,8 +377,7 @@ impl<T> PinHalf<T> {
 /// One create's sparse pin payload, shared as `Arc` within a batch.
 ///
 /// Outs and layout are independent immutable Arc halves (compose only the half
-/// that changes). Vacant insert is Frozen; first real compose promotes to
-/// ArcSwap (lock-free load; RCU store).
+/// that changes), each one [`PinHalf`].
 #[derive(Debug)]
 pub struct SharedParentPin {
     pub tx: TxRecord,
@@ -458,30 +448,17 @@ impl SharedParentPin {
 
     /// Compose outs half: `None` = no-op (keep existing Arc identity).
     ///
-    /// Uses RCU so concurrent widens from peer batches merge correctly.
+    /// `f` composes from the snapshot current under the half's lock, so a
+    /// concurrent widen from a peer batch is merged, not overwritten.
     #[doc(hidden)]
-    pub fn publish_outs(&self, f: impl Fn(&PinOuts) -> Option<PinOuts>) {
-        let cur = self.outs.load();
-        if f(cur.as_ref()).is_none() {
-            return;
-        }
-        self.outs.rcu(|cur| match f(cur.as_ref()) {
-            None => Arc::clone(cur),
-            Some(next) => Arc::new(next),
-        });
+    pub fn publish_outs(&self, f: impl FnOnce(&PinOuts) -> Option<PinOuts>) {
+        self.outs.publish(f);
     }
 
     /// Compose layout half: `None` = no-op (keep existing Arc identity).
     #[doc(hidden)]
-    pub fn publish_layout(&self, f: impl Fn(&ParentLayout) -> Option<ParentLayout>) {
-        let cur = self.layout.load();
-        if f(cur.as_ref()).is_none() {
-            return;
-        }
-        self.layout.rcu(|cur| match f(cur.as_ref()) {
-            None => Arc::clone(cur),
-            Some(next) => Arc::new(next),
-        });
+    pub fn publish_layout(&self, f: impl FnOnce(&ParentLayout) -> Option<ParentLayout>) {
+        self.layout.publish(f);
     }
 
     /// True when all `need` vouts are already in checked.
@@ -498,33 +475,20 @@ impl SharedParentPin {
     /// script still takes the source record.
     fn absorb_outs(&self, src: &PinOuts) {
         let extra = src.checked();
-        if self.load_outs().holds_checked_scripts(extra) {
-            return;
-        }
-        self.outs.rcu(|cur| {
+        self.publish_outs(|cur| {
             if cur.holds_checked_scripts(extra) {
-                Arc::clone(cur)
-            } else if let Some(next) = cur.union_full_checked(extra) {
-                Arc::new(next)
-            } else {
-                Arc::new(cur.compose(&src.sparse_live(), extra))
+                return None;
             }
+            cur.union_full_checked(extra)
+                .or_else(|| Some(cur.compose(&src.sparse_live(), extra)))
         });
     }
 
     /// No-op (empty / already-covered `checked`+`live`) keeps the outs Arc.
     #[doc(hidden)]
     pub fn merge_outs(&self, live: Vec<(u32, OutputRecord)>, checked: &[u32]) {
-        let snap = self.load_outs();
-        if snap.already_covers(&live, checked) {
-            return;
-        }
-        self.outs.rcu(|cur| {
-            if cur.already_covers(&live, checked) {
-                Arc::clone(cur)
-            } else {
-                Arc::new(cur.compose(&live, checked))
-            }
+        self.publish_outs(|cur| {
+            (!cur.already_covers(&live, checked)).then(|| cur.compose(&live, checked))
         });
     }
 
@@ -553,16 +517,9 @@ impl SharedParentPin {
         if body_range.is_none() && spender_rels.is_empty() {
             return;
         }
-        let snap = self.load_layout();
-        if snap.already_covers(body_range, spender_rels) {
-            return;
-        }
-        self.layout.rcu(|cur| {
-            if cur.already_covers(body_range, spender_rels) {
-                Arc::clone(cur)
-            } else {
-                Arc::new(cur.compose(body_range, spender_rels))
-            }
+        self.publish_layout(|cur| {
+            (!cur.already_covers(body_range, spender_rels))
+                .then(|| cur.compose(body_range, spender_rels))
         });
     }
 
@@ -924,7 +881,7 @@ impl BatchParents {
         let Some(e) = self.pins.get(&id) else {
             return;
         };
-        // RCU must recompute checked from `cur` (not a stale pre-load snap):
+        // The publish recomputes checked from `cur` (not this pre-load snap):
         // concurrent prep merge_outs can add peer need-vouts between load and
         // publish; replacing with a snap-built list clobbered those vouts.
         let mut need_for_sparse: Vec<u32> = e.load_outs().checked().to_vec();
@@ -951,10 +908,6 @@ impl BatchParents {
             need_for_sparse = e.load_outs().checked().to_vec();
         }
         let sparse = sparse_spender_rels(dense_rels, &need_for_sparse);
-        let lay = e.load_layout();
-        if lay.body_range == Some(body_range) && lay.already_covers(Some(body_range), &sparse) {
-            return;
-        }
         e.publish_layout(|cur| {
             if cur.body_range == Some(body_range) && cur.already_covers(Some(body_range), &sparse) {
                 return None;
@@ -1004,11 +957,6 @@ impl BatchParents {
                 Some(cur.with_checked(checked))
             });
             self.invalidate_sticky(id);
-        }
-        let lay = e.load_layout();
-        if lay.body_range == Some(body_range) && lay.already_covers(Some(body_range), &sparse_rels)
-        {
-            return;
         }
         e.publish_layout(|cur| {
             if cur.body_range == Some(body_range)
