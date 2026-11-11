@@ -160,9 +160,9 @@ prev txid in that set is left out of the wave's TipOnly need. The set is
 not a `txid → create_fk` cache and it binds nothing. Load binds the parent
 from in-flight, which holds every pack at or above the same snapshot. The
 wave drops the heights its own snapshot has reached before it reads, so a
-create load may have dropped is always read. The set empties when the
-re-arm generation changes, which is when load clears in-flight. A height
-decoded again replaces itself and every height above it.
+create load may have dropped is always read. Every re-arm changes the
+generation. Load clears in-flight on that change and the set empties on
+it. A height decoded again replaces itself and every height above it.
 
 A key lookup left out can bind only from in-flight, to the create load
 itself planned for that txid. If in-flight does not hold it, the stamp is
