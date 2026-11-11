@@ -190,10 +190,11 @@ fn owned_heap_steps_inflight_around_one_gib_only_when_a_prune_would_drop() {
         mphf_g_bytes: 6,
         mphf_occ_bytes: 7,
         class_c_l2_bytes: 8,
+        undrained_bytes: 9,
     };
     assert_eq!(
         heap.bytes(),
-        100 + 200 + 300 + 2 * 48 + 3 * 16 + 400 + 5 + 6 + 7 + 8
+        100 + 200 + 300 + 2 * 48 + 3 * 16 + 400 + 5 + 6 + 7 + 8 + 9
     );
 }
 
@@ -773,6 +774,84 @@ fn lookup_blocks_when_loadq_full() {
         gen: 0,
     })
     .unwrap();
+}
+
+/// The lookup set's bytes are a gauge on the pipeline snapshot, which is
+/// where the load thread reads them for the accounted heap.
+#[test]
+fn pipeline_snapshot_carries_the_lookup_set_bytes() {
+    let q = ConfirmQueueDepths::new();
+    assert_eq!(q.content_snap().undrained_bytes, 0);
+    q.note_undrained_bytes(4_096);
+    assert_eq!(q.content_snap().undrained_bytes, 4_096);
+    q.note_undrained_bytes(1_024);
+    assert_eq!(
+        q.content_snap().undrained_bytes,
+        1_024,
+        "the last wave replaces the figure"
+    );
+}
+
+/// One block through the confirm engine. The lookup thread reports the heap
+/// of its undrained-creates set by the time the block has connected.
+#[test]
+fn the_engine_reports_the_lookup_set_heap() {
+    use rbitcoin_consensus::mine_empty_regtest;
+    use rbitcoin_ibd::ibd::confirm::{spawn_confirm_engine, ConfirmEvent};
+    use rbitcoin_ibd::ibd::status::LoopStats;
+    use std::sync::atomic::AtomicU32;
+    use std::sync::mpsc::{channel, RecvTimeoutError};
+    use std::time::{Duration, Instant};
+
+    let (dir, hub) = rbitcoin_net::chain::tiny_regtest_hub_labeled("lookup-set-heap");
+    hub.query.enter_direct_index_mode().unwrap();
+    let hub = Arc::new(hub);
+    hub.ensure_genesis().unwrap();
+    let genesis = bitcoin::blockdata::constants::genesis_block(bitcoin::Network::Regtest);
+    let b1 = mine_empty_regtest(genesis.block_hash(), genesis.header.time + 600, 1);
+
+    let feed = Arc::new(ConfirmFeed::new());
+    let (ev_tx, ev_rx) = channel();
+    let (engine, queues) = spawn_confirm_engine(
+        Arc::clone(&hub),
+        Arc::clone(&feed),
+        ev_tx,
+        Arc::new(AtomicU32::new(0)),
+        Arc::new(LoopStats::default()),
+    );
+    assert_eq!(queues.content_snap().undrained_bytes, 0);
+    hub.query
+        .block_queue_enqueue(
+            1,
+            b1.block_hash().to_byte_array(),
+            1,
+            &bitcoin::consensus::serialize(&b1),
+        )
+        .unwrap();
+    feed.note(1, b1.block_hash());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        match ev_rx.recv_timeout(Duration::from_millis(5)) {
+            Ok(ConfirmEvent::Accepted { hash, .. }) => {
+                assert_eq!(hash, b1.block_hash());
+                break;
+            }
+            Ok(ConfirmEvent::Reject { height, err, .. }) => {
+                panic!("confirm reject @{height}: {err}")
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                assert!(Instant::now() < deadline, "block 1 did not connect")
+            }
+            Err(RecvTimeoutError::Disconnected) => panic!("confirm engine exited"),
+        }
+    }
+    let reported = queues.content_snap().undrained_bytes;
+    feed.request_stop();
+    feed.notify();
+    let _ = engine.join();
+
+    assert!(reported > 0, "lookup decoded block 1 and reported its set");
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// Parent entry meters accumulate and drain with send/recv (no budget gate).

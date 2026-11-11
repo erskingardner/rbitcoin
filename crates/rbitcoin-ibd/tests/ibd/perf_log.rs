@@ -47,6 +47,7 @@ fn ibd_perf_sample_is_one_timestamped_json_debug_line() {
     assert!(obj["work"]["body"].get("known").is_some());
     assert!(obj["owned"]["head"].get("class_a_n").is_some());
     assert!(obj["conf_pipe"].get("load_batches").is_some());
+    assert!(obj["conf_pipe"].get("undrained_bytes").is_some());
     assert!(obj["live"].is_null());
     let progress = rbitcoin_ibd::ibd::progress::format_progress_line(
         &rbitcoin_ibd::ibd::progress::ProgressLineInput {

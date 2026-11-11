@@ -51,16 +51,19 @@ pub const UNDRAINED_CREATES_MAX_TXIDS: usize = 900_000;
 /// only removes a key from the store read. It binds nothing, and a txid the
 /// set does not hold is read as before.
 ///
-/// RAM for CPU: 32 B per txid in the height list plus the hash set, an
-/// estimated 50 MiB for the 400,000 txids a height-850,000 pipeline holds,
-/// capped at [`UNDRAINED_CREATES_MAX_TXIDS`] (an estimated 100 MiB). It
-/// saves a probe of every sealed `tx.head` segment per txid.
+/// RAM for CPU: 32 B per txid in the height list plus the hash set. By
+/// [`Self::approx_bytes`] that is 29 MiB at 400,000 txids and 60 MiB at the
+/// [`UNDRAINED_CREATES_MAX_TXIDS`] cap. It saves a probe of every sealed
+/// `tx.head` segment per txid.
 #[derive(Debug, Default)]
 pub struct UndrainedCreates {
     gen: Option<u32>,
     txids: HashSet<[u8; 32], BuildHasherDefault<TxidHasher>>,
     /// Ascending by height.
     blocks: VecDeque<(u32, Box<[[u8; 32]]>)>,
+    /// Most txids `txids` has held. The hash set keeps the slots it grew
+    /// to, and its `capacity()` falls as txids leave.
+    peak: usize,
 }
 
 impl UndrainedCreates {
@@ -77,6 +80,28 @@ impl UndrainedCreates {
     #[doc(hidden)]
     pub fn is_empty(&self) -> bool {
         self.txids.is_empty()
+    }
+
+    /// Estimated heap the set holds: 32 B per txid in the height list, the
+    /// list's rows, and the hash set's slots (a 32 B key and a control byte
+    /// each). The slots are a power of two with one in eight left free at
+    /// the most txids the set has held. They stay when txids leave, so this
+    /// does not fall with [`Self::len`].
+    #[doc(hidden)]
+    pub fn approx_bytes(&self) -> usize {
+        let listed: usize = self.blocks.iter().map(|(_, txids)| txids.len()).sum();
+        let rows = self
+            .blocks
+            .capacity()
+            .saturating_mul(std::mem::size_of::<(u32, Box<[[u8; 32]]>)>());
+        let slots = match self.peak {
+            0 => 0,
+            peak => (peak.saturating_mul(8) / 7).next_power_of_two().max(4),
+        };
+        listed
+            .saturating_mul(32)
+            .saturating_add(rows)
+            .saturating_add(slots.saturating_mul(33))
     }
 
     /// Empty the set unless it was filled under re-arm generation `gen`.
@@ -123,6 +148,7 @@ impl UndrainedCreates {
             self.forget(&lowest);
         }
         self.txids.extend(txids.iter().copied());
+        self.peak = self.peak.max(self.txids.len());
         self.blocks.push_back((height, txids));
     }
 

@@ -468,6 +468,34 @@ fn undrained_creates_drop_the_lowest_height_at_the_cap() {
     assert!(undrained.is_empty(), "the snapshot passed height 11");
 }
 
+/// The set reports the heap it holds: 32 B per listed txid and the hash set
+/// at its capacity. A snapshot that passes every height frees the list. The
+/// hash set keeps its slots, so they stay counted.
+#[test]
+fn undrained_creates_report_their_heap() {
+    let txid = |i: u32| {
+        let mut t = [0u8; 32];
+        t[..4].copy_from_slice(&i.to_le_bytes());
+        t[31] = 1;
+        t
+    };
+    let mut undrained = UndrainedCreates::default();
+    assert_eq!(undrained.approx_bytes(), 0);
+
+    undrained.note_block(10, (0..1_000).map(txid));
+    let held = undrained.approx_bytes();
+    assert!(
+        held >= 1_000 * 32 + 1_000 * 33,
+        "1,000 txids in the list and in the set, got {held}"
+    );
+
+    undrained.drop_through(Some(10));
+    assert!(undrained.is_empty());
+    let after = undrained.approx_bytes();
+    assert_eq!(after, held - 1_000 * 32, "the list is freed");
+    assert!(after >= 1_000 * 33, "the set keeps its slots, got {after}");
+}
+
 #[test]
 fn bq_resolve_wave_attaches_tiponly_hits_multi_height() {
     let (path, q) = tmp_query();
