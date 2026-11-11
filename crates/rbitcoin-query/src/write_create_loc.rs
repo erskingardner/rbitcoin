@@ -5,8 +5,13 @@
 //! (`lookup_started_hi`, at least the noting pack). That value is never bumped.
 //! Prune drops a pack when that height has finished write (`written_hi ≥
 //! keep_until`) and the pack is not the one just written (`pack_height <
-//! written_hi`). Fill of that write runs first. Later-wave spends take TipOnly
-//! loc on the in-flight identity; RAM loc is only for same-wave holes.
+//! written_hi`). Fill of that write runs first. A later-wave spend takes
+//! TipOnly loc on the in-flight identity when its wave read the parent. A
+//! parent the wave left out, because its create was above the wave's
+//! snapshot, is a hole like a same-wave create. Its loc is the in-flight
+//! pin's once Class A has `set_loc`, and otherwise comes from this window:
+//! a parent written after the wave's TipOnly started is noted with a
+//! `keep_until` at or above that wave.
 //!
 //! This window is **write-thread TLS** (one writer per thread — same ownership
 //! as load's [`crate::InFlight`], not a `Query` mutex). Disconnect is polled
