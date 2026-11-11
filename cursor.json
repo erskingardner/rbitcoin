@@ -1,14 +1,14 @@
 {
   "new_base": "8e62e4ce4d60c30abc851cb0893e4b80149ac9e4",
-  "new_skip": 1980,
-  "old_index": 7680,
+  "new_skip": 2198,
+  "old_index": 8396,
   "new_cap_used": true,
-  "run_id": "42180909395",
-  "old_name": "crates/rbitcoin-mempool/src/orphanage.rs:329:9: replace Orphanage::evict_oldest -> bool with true",
-  "new_len": 4765,
-  "new_remaining": 2785,
-  "completed_new": 85,
-  "completed_old": 0,
-  "old_len": 29231,
-  "old_remaining": 29231
+  "run_id": "42978059542",
+  "old_name": "crates/rbitcoin-net/src/asmap.rs:444:5: replace two_prefix_asmap_bytes -> Vec<u8> with vec![]",
+  "new_len": 5415,
+  "new_remaining": 3217,
+  "completed_new": 218,
+  "completed_old": 743,
+  "old_len": 29051,
+  "old_remaining": 28308
 }
