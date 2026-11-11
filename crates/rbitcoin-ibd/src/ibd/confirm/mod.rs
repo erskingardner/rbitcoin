@@ -67,7 +67,8 @@ impl LoadAheadState {
         let wire = (pipe.load_wire_bytes as u64)
             .saturating_add(pipe.script_wire_bytes as u64)
             .saturating_add(pipe.write_wire_bytes as u64);
-        let accounted = AccountedHeap::from_hub(hub, inflight_bytes, wire).bytes();
+        let accounted =
+            AccountedHeap::from_hub(hub, inflight_bytes, wire, pipe.undrained_bytes as u64).bytes();
         let would_drop = self
             .in_flight
             .has_tagged_below(inflight_prune_height(hi, self.retain.extra()));
@@ -1266,8 +1267,9 @@ pub const FENCE_RUN_BYTES: u64 = 16;
 /// Process heap the old `ibd: sizes` line called `accounted`.
 ///
 /// Body queue, in-flight CreatePins, write-loc packs, the hash→height map,
-/// the height fence, confirm-queue wire, and the heap parts of fuse / MPHF /
-/// Class C. Mapped tables and allocator residue are not in this sum.
+/// the height fence, confirm-queue wire, the heap parts of fuse / MPHF /
+/// Class C, and the lookup thread's undrained-creates set. Mapped tables and
+/// allocator residue are not in this sum.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AccountedHeap {
     pub bq_bytes: u64,
@@ -1280,6 +1282,7 @@ pub struct AccountedHeap {
     pub mphf_g_bytes: u64,
     pub mphf_occ_bytes: u64,
     pub class_c_l2_bytes: u64,
+    pub undrained_bytes: u64,
 }
 
 impl AccountedHeap {
@@ -1294,10 +1297,16 @@ impl AccountedHeap {
             .saturating_add(self.mphf_g_bytes)
             .saturating_add(self.mphf_occ_bytes)
             .saturating_add(self.class_c_l2_bytes)
+            .saturating_add(self.undrained_bytes)
     }
 
     #[doc(hidden)]
-    pub fn from_hub(hub: &ChainHub, inflight_bytes: u64, wire_bytes: u64) -> Self {
+    pub fn from_hub(
+        hub: &ChainHub,
+        inflight_bytes: u64,
+        wire_bytes: u64,
+        undrained_bytes: u64,
+    ) -> Self {
         let owned = hub.query.process_owned_size_snapshot();
         let (bq_bytes, _count) = hub.query.block_queue_stats();
         let head = owned.head;
@@ -1312,6 +1321,7 @@ impl AccountedHeap {
             mphf_g_bytes: head.mphf_g_bytes,
             mphf_occ_bytes: head.mphf_occ_bytes,
             class_c_l2_bytes: head.class_c_l2_bytes,
+            undrained_bytes,
         }
     }
 }
@@ -1594,6 +1604,9 @@ pub struct ConfirmQueueDepths {
     pub write_wire_bytes: AtomicUsize,
     /// Sum of `BatchParents` entries in scripts→write (entry count, not unique Arc).
     pub write_parents: AtomicUsize,
+    /// Estimated heap of the lookup thread's undrained-creates set, as of
+    /// its last wave.
+    pub undrained_bytes: AtomicUsize,
 }
 
 /// Snapshot of confirm pipeline retain (queue depths + batch contents + feed).
@@ -1613,6 +1626,7 @@ pub struct ConfirmPipelineSizes {
     pub write_blocks: usize,
     pub write_wire_bytes: usize,
     pub write_parents: usize,
+    pub undrained_bytes: usize,
     pub feed_ready: usize,
     pub feed_inflight: usize,
 }
@@ -1700,6 +1714,7 @@ impl ConfirmQueueDepths {
             write_blocks: self.write_blocks.load(Ordering::Relaxed),
             write_wire_bytes: self.write_wire_bytes.load(Ordering::Relaxed),
             write_parents: self.write_parents.load(Ordering::Relaxed),
+            undrained_bytes: self.undrained_bytes.load(Ordering::Relaxed),
             feed_ready: 0,
             feed_inflight: 0,
         }
@@ -1730,6 +1745,12 @@ impl ConfirmQueueDepths {
         let _ = depth.try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
             Some(n.saturating_sub(1))
         });
+    }
+
+    /// The lookup thread's undrained-creates set after a wave. A gauge.
+    #[doc(hidden)]
+    pub fn note_undrained_bytes(&self, bytes: usize) {
+        self.undrained_bytes.store(bytes, Ordering::Relaxed);
     }
 
     #[doc(hidden)]
@@ -3257,7 +3278,7 @@ pub fn spawn_confirm_engine(
                 let mut did = false;
                 if !wave_h.is_empty() {
                     let t_wave = Instant::now();
-                    match lookup_bulk_wave(
+                    let wave = lookup_bulk_wave(
                         &hub.query,
                         &hub.params,
                         hub.milestone,
@@ -3265,7 +3286,9 @@ pub fn spawn_confirm_engine(
                         max_blocks,
                         max_inputs,
                         &mut undrained,
-                    ) {
+                    );
+                    queues_lookup.note_undrained_bytes(undrained.approx_bytes());
+                    match wave {
                         Ok(wave) if wave.items.is_empty() && wave.undecodable.is_none() => {
                             lookup_faults.on_success();
                         }
