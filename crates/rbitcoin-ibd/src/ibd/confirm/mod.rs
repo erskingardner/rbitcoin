@@ -1622,8 +1622,10 @@ pub struct ConfirmPipelineSizes {
 }
 
 impl ConfirmPipelineSizes {
-    /// Decoded wire the pipeline holds: the three queues and written
-    /// batches not yet freed. The confirm-queue wire of [`AccountedHeap`].
+    /// Decoded wire in the three queues and in written batches not yet
+    /// freed. The batch the write thread is writing is in neither: its wire
+    /// left the write queue at dequeue and is counted again once written.
+    /// The confirm-queue wire of [`AccountedHeap`].
     pub fn wire_bytes(&self) -> u64 {
         (self.load_wire_bytes as u64)
             .saturating_add(self.script_wire_bytes as u64)
@@ -2314,23 +2316,24 @@ pub fn spawn_confirm_engine(
             let stats = hub_wb.query.confirm_stats_arc();
             let _detach = ConfirmWriteDetach(&hub_wb.query);
             // Non-contig leftover already note_write_recv'd; write it next iter.
-            let mut leftover: Option<(rbitcoin_query::ScriptOkBatch, usize)> = None;
+            let mut leftover: Option<rbitcoin_query::ScriptOkBatch> = None;
             let mut pending_clear: Option<ArchivedBodyClear> = None;
+            let mut drop_thread_gone = false;
             loop {
                 if let Some(clear) = pending_clear.take() {
                     finish_archived_clear(&hub_wb.query, clear);
                     continue;
                 }
                 let t_recv = Instant::now();
-                let (first, mut wire) = match leftover.take() {
-                    Some(held) => held,
+                let first = match leftover.take() {
+                    Some(b) => b,
                     None => match write_rx.recv_timeout(Duration::from_millis(200)) {
                         Ok(rbitcoin_query::ConfirmWriteMsg::Batch(b)) => {
                             let n = b.len();
                             let wire = b.approx_wire_bytes();
                             let parents = b.parent_count();
                             q_wb.note_write_recv(n, wire, parents);
-                            (b, wire)
+                            b
                         }
                         Ok(rbitcoin_query::ConfirmWriteMsg::ClearArchived { hash, reply }) => {
                             finish_archived_clear(
@@ -2350,24 +2353,18 @@ pub fn spawn_confirm_engine(
                         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                     },
                 };
-                let mut last_wire = wire;
                 let (batch, parts, next_left, clear) = drain_script_ok_write_queue(
                     first,
                     &write_rx,
                     write_drain_max_parts(write_queue_cap()),
                     |b| {
                         let n = b.len();
-                        last_wire = b.approx_wire_bytes();
+                        let wire = b.approx_wire_bytes();
                         let parents = b.parent_count();
-                        q_wb.note_write_recv(n, last_wire, parents);
-                        wire = wire.saturating_add(last_wire);
+                        q_wb.note_write_recv(n, wire, parents);
                     },
                 );
-                // A part that did not merge is the last one the drain counted.
-                leftover = next_left.map(|left| {
-                    wire = wire.saturating_sub(last_wire);
-                    (left, last_wire)
-                });
+                leftover = next_left;
                 pending_clear = clear;
                 confirm_thr_stats::add_write_recv_wait(&stats, t_recv.elapsed());
                 if feed_wb.stopped() || hub_wb.query.confirm_cancelled() {
@@ -2408,10 +2405,22 @@ pub fn spawn_confirm_engine(
                 let mut template_hold = mp_hold.as_ref().map(|mp| mp.template_hold());
                 match write_batch_trusted(&hub_wb, batch) {
                     Ok((_fks, written)) => {
-                        if drops.retire(q_wb.hold_for_drop(written, wire))
-                            == drop_thread::DropSite::Inline
-                        {
-                            rbitcoin_query::note_confirm(&stats.write_drop_inline, 1);
+                        // The sizes the accepted events use are this batch's
+                        // wire, the figure the write queue counted it by.
+                        let wire = wire_sizes.iter().sum::<u64>() as usize;
+                        match drops.retire(q_wb.hold_for_drop(written, wire)) {
+                            drop_thread::DropSite::Sidecar => {}
+                            drop_thread::DropSite::Inline => {
+                                rbitcoin_query::note_confirm(&stats.write_drop_inline, 1);
+                            }
+                            drop_thread::DropSite::Gone if !drop_thread_gone => {
+                                drop_thread_gone = true;
+                                warn!(
+                                    "ibd: {} exited; the write thread frees its batches",
+                                    drop_thread::DROP_THREAD_NAME
+                                );
+                            }
+                            drop_thread::DropSite::Gone => {}
                         }
                         if let Err(e) =
                             hub_wb.note_confirmed_tip_while(&meta, &headers, template_hold.as_mut())

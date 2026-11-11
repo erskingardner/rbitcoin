@@ -20,8 +20,13 @@ pub const DROP_QUEUE_CAP: usize = 1;
 /// Where [`DropThread::retire`] freed the value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DropSite {
+    /// Queued for the thread.
     Sidecar,
+    /// Freed by the caller: the queue was full.
     Inline,
+    /// Freed by the caller: the thread has exited. Only a panic in a drop
+    /// ends it while its owner is alive.
+    Gone,
 }
 
 /// Owner of the drop thread. Field order is drop order: the queue closes,
@@ -60,13 +65,18 @@ impl<T: Send + 'static> DropThread<T> {
         })
     }
 
-    /// Free `value` on the thread, or here when its queue is full.
+    /// Free `value` on the thread, or here when its queue is full or the
+    /// thread has exited.
     pub fn retire(&self, value: T) -> DropSite {
         match self.tx.try_send(value) {
             Ok(()) => DropSite::Sidecar,
-            Err(TrySendError::Full(value) | TrySendError::Disconnected(value)) => {
+            Err(TrySendError::Full(value)) => {
                 drop(value);
                 DropSite::Inline
+            }
+            Err(TrySendError::Disconnected(value)) => {
+                drop(value);
+                DropSite::Gone
             }
         }
     }

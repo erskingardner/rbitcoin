@@ -140,6 +140,37 @@ fn held_bytes_stay_in_the_accounted_wire_until_the_value_is_gone() {
     assert_eq!(queues.content_snap().wire_bytes(), 60);
 }
 
+/// A drop that panics ends the thread. The caller frees every later value,
+/// and `retire` says the thread is gone instead of busy.
+#[test]
+fn retire_reports_a_thread_that_has_exited() {
+    use std::time::Instant;
+
+    struct PanicsOnDrop;
+    impl Drop for PanicsOnDrop {
+        fn drop(&mut self) {
+            panic!("a drop on ibd-confirm-drop panicked (expected by this test)");
+        }
+    }
+
+    let drops = DropThread::<Option<PanicsOnDrop>>::spawn(DROP_QUEUE_CAP, |_| {}).unwrap();
+    assert_eq!(drops.retire(Some(PanicsOnDrop)), DropSite::Sidecar);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        match drops.retire(None) {
+            DropSite::Gone => break,
+            DropSite::Sidecar | DropSite::Inline => {
+                assert!(
+                    Instant::now() < deadline,
+                    "retire never reported the exited thread"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }
+    assert_eq!(drops.retire(None), DropSite::Gone);
+}
+
 /// One block through the confirm engine. The write thread hands the written
 /// batch to the sidecar, and nothing is held once the engine has joined.
 #[test]
