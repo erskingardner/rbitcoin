@@ -468,6 +468,149 @@ fn undrained_creates_drop_the_lowest_height_at_the_cap() {
     assert!(undrained.is_empty(), "the snapshot passed height 11");
 }
 
+/// The skip and the load bind together. Wave 1 decodes block 1 and load
+/// plans it, which puts its create in in-flight. Wave 2 decodes block 2,
+/// which spends that create, and leaves the parent out of its read. Load
+/// binds it to the fk it planned for block 1. Without in-flight the same
+/// need is an unresolved parent: a skipped key binds there or nowhere.
+#[test]
+fn a_skipped_parent_binds_from_in_flight_or_not_at_all() {
+    use rbitcoin_query::{
+        confirm_wire_lookup_stamp, stamp_external_parents, InFlight, WireLoadPipeline,
+    };
+    use std::sync::Arc;
+
+    let (path, q) = tmp_query();
+    let params = ChainParams::regtest();
+    let (b1, parent) = queue_parent_and_child(&q, &params);
+    let mut undrained = UndrainedCreates::default();
+
+    let first = resolve_wave_with(&q, &params, Milestone::NONE, &[1], &mut undrained);
+    let mut in_flight = InFlight::new();
+    let plan = {
+        let pipe = WireLoadPipeline {
+            path_lo: 1,
+            parent_hash: None,
+            next_tx_start: q.tx_body_count().saturating_add(1),
+            in_flight: &in_flight,
+            skeleton: Some(first.parent_ids.clone()),
+            carried_need: Vec::new(),
+            carried_header_fks: Vec::new(),
+            carried_header_hashes: Vec::new(),
+        };
+        let items = [(Height(1), Arc::new(b1.clone()), None)];
+        confirm_wire_lookup_stamp(&q, &params, Milestone::NONE, &items, Some(&pipe))
+            .unwrap()
+            .plan
+            .expect("block 1 is a new body")
+    };
+    let planned_fk = plan.planned_fks[0];
+    in_flight.note_pins(
+        plan.planned_fks
+            .iter()
+            .zip(plan.batch_pin.iter())
+            .map(|(fk, pin)| (*fk, pin)),
+        Some(1),
+    );
+    take_emitted(&q, &first);
+
+    let second = resolve_wave_with(&q, &params, Milestone::NONE, &[2], &mut undrained);
+    assert_eq!(second.stats.undrained_skip, 1);
+    assert!(second.parent_ids.get(&parent).is_none());
+
+    let bound = stamp_external_parents(
+        q.store(),
+        &[parent],
+        &in_flight,
+        Some(&second.parent_ids),
+        q.confirm_stats(),
+    )
+    .unwrap();
+    assert_eq!(
+        bound.resolved.get(&parent).copied(),
+        Some(planned_fk),
+        "the skipped parent is the create load planned for block 1"
+    );
+
+    match stamp_external_parents(
+        q.store(),
+        &[parent],
+        &InFlight::new(),
+        Some(&second.parent_ids),
+        q.confirm_stats(),
+    ) {
+        Err(e) => assert!(e.to_string().contains("parent create_fk unresolved"), "{e}"),
+        Ok(stamp) => panic!(
+            "a skipped parent with no in-flight create bound to {:?}",
+            stamp.resolved.get(&parent)
+        ),
+    }
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+/// A height decoded again replaces that height and every height above it.
+/// Lookup walks upward from the first unsent height, so the rows above a
+/// re-walked height were queued again and may differ.
+#[test]
+fn a_height_decoded_again_replaces_it_and_every_height_above() {
+    let txid = |i: u32| {
+        let mut t = [0u8; 32];
+        t[..4].copy_from_slice(&i.to_le_bytes());
+        t[31] = 1;
+        t
+    };
+    let mut undrained = UndrainedCreates::default();
+    undrained.note_block(10, std::iter::once(txid(10)));
+    undrained.note_block(11, std::iter::once(txid(11)));
+    undrained.note_block(12, std::iter::once(txid(12)));
+
+    undrained.note_block(11, std::iter::once(txid(99)));
+    assert_eq!(undrained.len(), 2);
+    assert!(undrained.txids().contains(&txid(10)), "height 10 stays");
+    assert!(undrained.txids().contains(&txid(99)));
+    assert!(
+        !undrained.txids().contains(&txid(11)),
+        "the old height 11 left"
+    );
+    assert!(
+        !undrained.txids().contains(&txid(12)),
+        "height 12 was above the height walked again"
+    );
+
+    undrained.drop_through(Some(11));
+    assert!(undrained.is_empty(), "no stale height stays in the list");
+}
+
+/// The estimate covers the hash set's slots through long first-in-first-out
+/// churn, which is how lookup uses the set. Removals leave tombstones, and a
+/// table that fills with them while more than half full grows instead of
+/// rehashing in place.
+#[test]
+fn the_heap_estimate_covers_the_hash_set_through_churn() {
+    let txid = |i: u32| {
+        let mut t = [0u8; 32];
+        t[..4].copy_from_slice(&i.to_le_bytes());
+        t[31] = 1;
+        t
+    };
+    let covered = |undrained: &UndrainedCreates, at: &str| {
+        let floor = undrained.len() * 32 + undrained.txids().capacity() * 33;
+        let got = undrained.approx_bytes();
+        assert!(got >= floor, "{at}: estimate {got} is under {floor}");
+    };
+    let mut undrained = UndrainedCreates::default();
+    let mut next = 0u32;
+    for height in 0..400u32 {
+        undrained.note_block(height, (next..next + 100).map(txid));
+        next += 100;
+        covered(&undrained, "after a block");
+        if let Some(passed) = height.checked_sub(141) {
+            undrained.drop_through(Some(passed));
+            covered(&undrained, "after a snapshot");
+        }
+    }
+}
+
 /// The set reports the heap it holds: 32 B per listed txid and the hash set
 /// at its capacity. A snapshot that passes every height frees the list. The
 /// hash set keeps its slots, so they stay counted.

@@ -52,8 +52,9 @@ pub const UNDRAINED_CREATES_MAX_TXIDS: usize = 900_000;
 /// set does not hold is read as before.
 ///
 /// RAM for CPU: 32 B per txid in the height list plus the hash set. By
-/// [`Self::approx_bytes`] that is 29 MiB at 400,000 txids and 60 MiB at the
-/// [`UNDRAINED_CREATES_MAX_TXIDS`] cap. It saves a probe of every sealed
+/// [`Self::approx_bytes`] that is 29 to 45 MiB at 400,000 txids and 60 to
+/// 93 MiB at the [`UNDRAINED_CREATES_MAX_TXIDS`] cap, the higher figure
+/// once churn has doubled the hash set. It saves a probe of every sealed
 /// `tx.head` segment per txid.
 #[derive(Debug, Default)]
 pub struct UndrainedCreates {
@@ -61,9 +62,10 @@ pub struct UndrainedCreates {
     txids: HashSet<[u8; 32], BuildHasherDefault<TxidHasher>>,
     /// Ascending by height.
     blocks: VecDeque<(u32, Box<[[u8; 32]]>)>,
-    /// Most txids `txids` has held. The hash set keeps the slots it grew
-    /// to, and its `capacity()` falls as txids leave.
-    peak: usize,
+    /// Largest `txids.capacity()` seen right after a block went in. The
+    /// hash set never gives slots back, and its `capacity()` falls as
+    /// removals leave tombstones, so the high-water mark is its real size.
+    slots: usize,
 }
 
 impl UndrainedCreates {
@@ -83,10 +85,11 @@ impl UndrainedCreates {
     }
 
     /// Estimated heap the set holds: 32 B per txid in the height list, the
-    /// list's rows, and the hash set's slots (a 32 B key and a control byte
-    /// each). The slots are a power of two with one in eight left free at
-    /// the most txids the set has held. They stay when txids leave, so this
-    /// does not fall with [`Self::len`].
+    /// list's rows, and the hash set's buckets (a 32 B key and a control
+    /// byte each, eight buckets for every seven slots of capacity). The
+    /// buckets stay when txids leave, so this does not fall with
+    /// [`Self::len`]. Under churn the hash set can hold twice the buckets
+    /// its txids need.
     #[doc(hidden)]
     pub fn approx_bytes(&self) -> usize {
         let listed: usize = self.blocks.iter().map(|(_, txids)| txids.len()).sum();
@@ -94,14 +97,14 @@ impl UndrainedCreates {
             .blocks
             .capacity()
             .saturating_mul(std::mem::size_of::<(u32, Box<[[u8; 32]]>)>());
-        let slots = match self.peak {
+        let buckets = match self.slots {
             0 => 0,
-            peak => (peak.saturating_mul(8) / 7).next_power_of_two().max(4),
+            slots => (slots.saturating_mul(8) / 7).next_power_of_two(),
         };
         listed
             .saturating_mul(32)
             .saturating_add(rows)
-            .saturating_add(slots.saturating_mul(33))
+            .saturating_add(buckets.saturating_mul(33))
     }
 
     /// Empty the set unless it was filled under re-arm generation `gen`.
@@ -148,7 +151,7 @@ impl UndrainedCreates {
             self.forget(&lowest);
         }
         self.txids.extend(txids.iter().copied());
-        self.peak = self.peak.max(self.txids.len());
+        self.slots = self.slots.max(self.txids.capacity());
         self.blocks.push_back((height, txids));
     }
 
@@ -361,6 +364,12 @@ pub fn confirm_bq_resolve_wave_capped(
     undrained: &mut UndrainedCreates,
 ) -> Result<BqResolveWave, ConfirmError> {
     let t0 = Instant::now();
+    // The caller read the generation before it selected heights and takes
+    // this wave's rows under that value. A re-arm between its read and this
+    // one fills the set under the new generation from the old selection,
+    // and the take then fails. The next wave starts at or below those
+    // heights, and a height walked again replaces itself and every height
+    // above it.
     undrained.rearm(query.lookup_taken_gen());
     let mut stats = BqResolveWaveStats::default();
     let mut done: Vec<u32> = Vec::new();
