@@ -347,12 +347,16 @@ impl ParentLayout {
 /// is the trade for a publish and a drop that touch only this half. An
 /// `ArcSwap` here costs more: its store and its drop each walk every thread
 /// that has used `arc-swap`, once per pin.
+///
+/// A compose closure must not `load` or `publish` the half it runs under:
+/// the lock is not re-entrant.
 #[derive(Debug)]
 #[doc(hidden)]
 pub struct PinHalf<T>(Mutex<Arc<T>>);
 
 impl<T> PinHalf<T> {
-    fn new(val: T) -> Self {
+    #[doc(hidden)]
+    pub fn new(val: T) -> Self {
         Self(Mutex::new(Arc::new(val)))
     }
 
@@ -360,17 +364,25 @@ impl<T> PinHalf<T> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    #[doc(hidden)]
     #[inline]
-    fn load(&self) -> Arc<T> {
+    pub fn load(&self) -> Arc<T> {
         Arc::clone(&self.slot())
     }
 
     /// `compose` sees the current snapshot. `None` keeps it and its `Arc`.
-    fn publish(&self, compose: impl FnOnce(&T) -> Option<T>) {
-        let mut slot = self.slot();
-        if let Some(next) = compose(&slot) {
-            *slot = Arc::new(next);
-        }
+    /// The superseded snapshot is released after the lock, so a reader does
+    /// not wait for its free when the pin was the last owner.
+    #[doc(hidden)]
+    pub fn publish(&self, compose: impl FnOnce(&T) -> Option<T>) {
+        let superseded = {
+            let mut slot = self.slot();
+            let Some(next) = compose(&slot) else {
+                return;
+            };
+            std::mem::replace(&mut *slot, Arc::new(next))
+        };
+        drop(superseded);
     }
 }
 
@@ -525,7 +537,7 @@ impl SharedParentPin {
 
     #[allow(clippy::type_complexity)] // packed (fk, range) / span row is the on-disk shape
     /// Single-snap apply for free-pin Occupied path: outs widen and/or layout
-    /// merge from one outs load + one layout load (no double compose when no-op).
+    /// merge, one publish per half (a no-op keeps that half's `Arc`).
     #[doc(hidden)]
     pub fn apply_pin_delta(
         &self,

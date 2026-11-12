@@ -407,6 +407,53 @@ fn compose_adds_vout_without_mutating_old_snap() {
     );
 }
 
+/// A publish frees the snapshot it replaced after the half's lock is
+/// released: a reader gets the half while that free is still running.
+#[test]
+fn a_reader_does_not_wait_for_the_free_of_a_superseded_snapshot() {
+    use std::sync::mpsc::{channel, Receiver, Sender};
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    /// With a gate, `Drop` says it started and waits for the gate to open.
+    struct SlowFree(Option<(Sender<()>, Mutex<Receiver<()>>)>);
+    impl Drop for SlowFree {
+        fn drop(&mut self) {
+            if let Some((started, open)) = &self.0 {
+                let _ = started.send(());
+                let _ = open.lock().unwrap_or_else(|e| e.into_inner()).recv();
+            }
+        }
+    }
+
+    let (started_tx, started) = channel();
+    let (open, gate) = channel();
+    let half = Arc::new(PinHalf::new(SlowFree(Some((started_tx, Mutex::new(gate))))));
+    let publisher = std::thread::spawn({
+        let half = Arc::clone(&half);
+        move || half.publish(|_| Some(SlowFree(None)))
+    });
+    started
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the publish frees the snapshot it replaced");
+    let (read_tx, read) = channel();
+    let reader = std::thread::spawn({
+        let half = Arc::clone(&half);
+        move || {
+            let _ = read_tx.send(half.load().0.is_none());
+        }
+    });
+    let got = read.recv_timeout(Duration::from_secs(5));
+    open.send(()).unwrap();
+    publisher.join().unwrap();
+    reader.join().unwrap();
+    assert_eq!(
+        got,
+        Ok(true),
+        "a reader waited for the free of the superseded snapshot"
+    );
+}
+
 /// A layout publish leaves the superseded snapshot to its readers. The pin
 /// holds one layout after its first publish and after a later one.
 #[test]
