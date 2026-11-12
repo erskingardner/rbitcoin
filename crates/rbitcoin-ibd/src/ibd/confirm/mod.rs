@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[doc(hidden)]
-pub mod drop_thread;
+pub mod held_for_drop;
 
 /// Load-thread pipeline caches so load(N+1) can run while write(N) has not advanced tip.
 ///
@@ -1594,8 +1594,8 @@ pub struct ConfirmQueueDepths {
     pub write_wire_bytes: AtomicUsize,
     /// Sum of `BatchParents` entries in scripts→write (entry count, not unique Arc).
     pub write_parents: AtomicUsize,
-    /// Approx wire bytes of written batches not yet freed: the one waiting
-    /// for `ibd-confirm-drop` and the one it is freeing.
+    /// Approx wire bytes of the written batch `ibd-confirm-head` has not
+    /// freed yet.
     pub drop_wire_bytes: AtomicUsize,
 }
 
@@ -2245,7 +2245,7 @@ pub mod confirm_thr_stats {
         rbitcoin_query::note_confirm_dur(&stats.thr_write_work_ns, d);
     }
 
-    /// `ibd-confirm-drop` freeing a written batch. Not part of write work.
+    /// `ibd-confirm-head` freeing a written batch. Not part of write work.
     #[inline]
     pub fn add_drop_work(stats: &rbitcoin_query::ConfirmStats, d: Duration) {
         rbitcoin_query::note_confirm_dur(&stats.thr_drop_work_ns, d);
@@ -2283,11 +2283,6 @@ pub fn spawn_confirm_engine(
 ) -> (std::thread::JoinHandle<()>, Arc<ConfirmQueueDepths>) {
     let queues = ConfirmQueueDepths::new();
     let caps = confirm_queue_caps();
-    let drops = drop_thread::DropThread::spawn(drop_thread::DROP_QUEUE_CAP, {
-        let stats = hub.query.confirm_stats_arc();
-        move |d| confirm_thr_stats::add_drop_work(&stats, d)
-    })
-    .expect("spawn ibd-confirm-drop");
     type ScriptsIn = (rbitcoin_query::LoadedBatch, u64);
     let (mat_tx, mat_rx) = std::sync::mpsc::sync_channel::<ScriptsIn>(caps.script);
     let (write_tx, write_rx) =
@@ -2315,10 +2310,10 @@ pub fn spawn_confirm_engine(
             info!("ibd: confirm write on dedicated OS thread");
             let stats = hub_wb.query.confirm_stats_arc();
             let _detach = ConfirmWriteDetach(&hub_wb.query);
+            let _frees = held_for_drop::JoinHeadFrees;
             // Non-contig leftover already note_write_recv'd; write it next iter.
             let mut leftover: Option<rbitcoin_query::ScriptOkBatch> = None;
             let mut pending_clear: Option<ArchivedBodyClear> = None;
-            let mut drop_thread_gone = false;
             loop {
                 if let Some(clear) = pending_clear.take() {
                     finish_archived_clear(&hub_wb.query, clear);
@@ -2408,20 +2403,10 @@ pub fn spawn_confirm_engine(
                         // The sizes the accepted events use are this batch's
                         // wire, the figure the write queue counted it by.
                         let wire = wire_sizes.iter().sum::<u64>() as usize;
-                        match drops.retire(q_wb.hold_for_drop(written, wire)) {
-                            drop_thread::DropSite::Sidecar => {}
-                            drop_thread::DropSite::Inline => {
-                                rbitcoin_query::note_confirm(&stats.write_drop_inline, 1);
-                            }
-                            drop_thread::DropSite::Gone if !drop_thread_gone => {
-                                drop_thread_gone = true;
-                                warn!(
-                                    "ibd: {} exited; the write thread frees its batches",
-                                    drop_thread::DROP_THREAD_NAME
-                                );
-                            }
-                            drop_thread::DropSite::Gone => {}
-                        }
+                        held_for_drop::free_on_head(
+                            q_wb.hold_for_drop(written, wire),
+                            Arc::clone(&stats),
+                        );
                         if let Err(e) =
                             hub_wb.note_confirmed_tip_while(&meta, &headers, template_hold.as_mut())
                         {

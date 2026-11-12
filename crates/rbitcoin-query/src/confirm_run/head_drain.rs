@@ -3,6 +3,11 @@
 //! Flag off overlaps this insert with structural, Class C, and annotate.
 //! `--datadir-hdd` starts the insert after annotate returns. One inserter;
 //! the thread stays up so each batch does not `thread::scope` spawn/teardown.
+//!
+//! The thread also frees what a written batch still holds
+//! ([`submit_head_free`]). Jobs run in queue order, so a free submitted
+//! after one write returns runs before the next write's insert, and that
+//! write joins its insert: one free is queued or running at a time.
 
 use rbitcoin_store::StoreError;
 use std::collections::VecDeque;
@@ -154,6 +159,32 @@ where
         #[cfg(debug_assertions)]
         named,
     }
+}
+
+/// Run `free` on [`HEAD_DRAIN_THREAD_NAME`] after the jobs already queued.
+/// Nothing joins it. A panic in `free` is caught, so the thread keeps
+/// serving inserts.
+pub fn submit_head_free<F>(free: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let pool = pool();
+    {
+        let mut q = pool.jobs.lock().unwrap_or_else(|p| p.into_inner());
+        q.push_back(Box::new(move || {
+            let _ = panic::catch_unwind(AssertUnwindSafe(free));
+        }));
+    }
+    pool.cv.notify_one();
+}
+
+/// Wait until every job queued before this call has run.
+pub fn join_head_frees() {
+    let (tx, rx) = mpsc::sync_channel(1);
+    submit_head_free(move || {
+        let _ = tx.send(());
+    });
+    let _ = rx.recv();
 }
 
 #[doc(hidden)]

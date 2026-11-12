@@ -50,6 +50,76 @@ fn head_drain_drop_waits_for_the_worker() {
         .expect("drop finishes once the worker does");
 }
 
+/// A free waits its turn behind the insert already queued and runs before
+/// an insert queued after it, on the head thread.
+#[test]
+fn a_head_free_runs_on_the_head_thread_in_queue_order() {
+    use rbitcoin_query::confirm_run::{
+        submit_head_drain, submit_head_free, HEAD_DRAIN_THREAD_NAME,
+    };
+    use std::sync::mpsc;
+
+    let (seen_tx, seen) = mpsc::channel();
+    let (open_tx, open) = mpsc::channel::<()>();
+    let mut first = submit_head_drain(move || {
+        let _ = open.recv();
+        Ok(1)
+    });
+    let free_seen = seen_tx.clone();
+    submit_head_free(move || {
+        let _ = free_seen.send(("free", std::thread::current().name().map(str::to_owned)));
+    });
+    let mut second = submit_head_drain(move || {
+        let _ = seen_tx.send(("insert", None));
+        Ok(2)
+    });
+    assert!(
+        seen.try_recv().is_err(),
+        "nothing runs past the insert the thread is in"
+    );
+    open_tx.send(()).unwrap();
+    assert_eq!(first.recv_result().unwrap(), 1);
+    assert_eq!(second.recv_result().unwrap(), 2);
+    let order: Vec<_> = seen.try_iter().collect();
+    assert_eq!(
+        order,
+        vec![
+            ("free", Some(HEAD_DRAIN_THREAD_NAME.to_owned())),
+            ("insert", None)
+        ]
+    );
+}
+
+/// The head thread is process-wide and every write joins it, so a free that
+/// panics must not end it.
+#[test]
+fn a_head_free_that_panics_leaves_the_thread_serving_inserts() {
+    use rbitcoin_query::confirm_run::{submit_head_drain, submit_head_free};
+
+    submit_head_free(|| panic!("a free on ibd-confirm-head panicked (expected by this test)"));
+    let mut insert = submit_head_drain(|| Ok(7));
+    assert_eq!(insert.recv_result().unwrap(), 7);
+}
+
+#[test]
+fn join_head_frees_waits_for_the_frees_queued_before_it() {
+    use rbitcoin_query::confirm_run::{join_head_frees, submit_head_free};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let freed = Arc::new(AtomicUsize::new(0));
+    for _ in 0..3 {
+        let freed = Arc::clone(&freed);
+        submit_head_free(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            freed.fetch_add(1, Ordering::SeqCst);
+        });
+    }
+    join_head_frees();
+    assert_eq!(freed.load(Ordering::SeqCst), 3);
+}
+
 #[test]
 fn head_insert_join_restore_empty_ok() {
     use rbitcoin_query::confirm_run::submit_head_insert;
