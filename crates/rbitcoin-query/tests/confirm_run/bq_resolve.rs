@@ -14,9 +14,14 @@ use rbitcoin_primitives::Height;
 use rbitcoin_query::accept_and_connect_block;
 use rbitcoin_query::confirm_run::bq_resolve::*;
 use rbitcoin_query::Query;
-use rbitcoin_query::{TxPrecompute, TxidHasher};
-use std::collections::HashSet;
-use std::hash::BuildHasherDefault;
+use rbitcoin_query::TxPrecompute;
+fn numbered_txid(i: u32) -> [u8; 32] {
+    let mut t = [0u8; 32];
+    t[..4].copy_from_slice(&i.to_le_bytes());
+    t[31] = 1;
+    t
+}
+
 fn tmp_query() -> (rbitcoin_query::testutil::TempDir, Query) {
     rbitcoin_query::testutil::tiny_query_labeled("bq-resolve")
 }
@@ -231,8 +236,7 @@ fn push_resolve_keys_dedups_same_prev_txid() {
     };
     let pres: Vec<TxPrecompute> = block.txdata.iter().map(TxPrecompute::from_tx).collect();
     let mut keys = WaveKeys::default();
-    let skip: HashSet<[u8; 32], BuildHasherDefault<TxidHasher>> =
-        HashSet::with_hasher(BuildHasherDefault::default());
+    let skip = UndrainedCreates::default();
     let spends = push_resolve_keys(&params, height, &block, &pres, &skip, &mut keys, 1);
     assert_eq!(keys.need.len(), 1);
     assert!(keys.need.contains(&prev.to_byte_array()));
@@ -241,20 +245,20 @@ fn push_resolve_keys_dedups_same_prev_txid() {
         spends,
         vec![(prev.to_byte_array(), 0), (prev.to_byte_array(), 1),]
     );
-    let mut skip_same = HashSet::with_hasher(BuildHasherDefault::default());
-    skip_same.insert(prev.to_byte_array());
+    let mut skip_same = UndrainedCreates::default();
+    skip_same.note_block(height, std::iter::once(prev.to_byte_array()));
     let mut keys2 = WaveKeys::default();
     let skipped = push_resolve_keys(&params, height, &block, &pres, &skip_same, &mut keys2, 1);
     assert!(
         keys2.need.is_empty(),
-        "a prev in the skip set is not TipOnly need"
+        "a prev the set holds is not TipOnly need"
     );
     assert_eq!(
         keys2.skipped,
         vec![prev.to_byte_array(), prev.to_byte_array()],
         "each skipped input is kept, to go back into the need if its create drains"
     );
-    let empty = HashSet::with_hasher(BuildHasherDefault::default());
+    let empty = UndrainedCreates::default();
     assert_eq!(
         keys2.readmit(&skip_same),
         2,
@@ -265,7 +269,7 @@ fn push_resolve_keys_dedups_same_prev_txid() {
     assert_eq!(keys2.readmit(&empty), 0);
     assert!(
         keys2.need.contains(&prev.to_byte_array()),
-        "a prev the skip set dropped is TipOnly need again"
+        "a prev the set no longer holds is TipOnly need again"
     );
     assert_eq!(
         skipped,
@@ -286,8 +290,8 @@ fn push_resolve_keys_dedups_same_prev_txid() {
         pre_keys.need.contains(&cb),
         "before BIP34 the create txid is a resolve key"
     );
-    let mut skip_cb = HashSet::with_hasher(BuildHasherDefault::default());
-    skip_cb.insert(cb);
+    let mut skip_cb = UndrainedCreates::default();
+    skip_cb.note_block(0, std::iter::once(cb));
     let mut hidden = WaveKeys::default();
     push_resolve_keys(&params, 0, &pre, &pre_pres, &skip_cb, &mut hidden, 1);
     assert!(
@@ -419,10 +423,10 @@ fn rearm_makes_the_next_wave_read_every_parent() {
     let _ = std::fs::remove_dir_all(&path);
 }
 
-/// Rows a wave decoded but did not send are selected again. The set holds
-/// each height once however often lookup walks it.
+/// Rows a wave decoded but did not send are selected again, and their
+/// creates are still this wave's own.
 #[test]
-fn unsent_heights_walked_again_do_not_grow_the_set() {
+fn unsent_heights_walked_again_are_still_the_waves_own_creates() {
     let (path, q) = tmp_query();
     let params = ChainParams::regtest();
     let (_b1, _parent) = queue_parent_and_child(&q, &params);
@@ -430,42 +434,68 @@ fn unsent_heights_walked_again_do_not_grow_the_set() {
 
     let first = resolve_wave_with(&q, &params, Milestone::NONE, &[1, 2], &mut undrained);
     assert_eq!(first.items.len(), 2);
-    assert_eq!(
-        undrained.len(),
-        3,
-        "block 1's coinbase, block 2's coinbase and spend"
-    );
     let again = resolve_wave_with(&q, &params, Milestone::NONE, &[1, 2], &mut undrained);
     assert_eq!(again.items.len(), 2);
-    assert_eq!(undrained.len(), 3);
     assert_eq!(again.stats.keys, 0, "the parent is this wave's own create");
     let _ = std::fs::remove_dir_all(&path);
 }
 
 /// No chain a test can build fills the set, so the cap is driven directly.
-/// Past the cap the lowest height leaves: spends of its creates are TipOnly
-/// need again, and the newest block is always recorded.
+/// The block that needs a third map pushes the older map out: spends of its
+/// creates are TipOnly need again, and the newest block is always recorded.
 #[test]
-fn undrained_creates_drop_the_lowest_height_at_the_cap() {
-    let txid = |i: u32| {
-        let mut t = [0u8; 32];
-        t[..4].copy_from_slice(&i.to_le_bytes());
-        t[31] = 1;
-        t
-    };
-    let cap = UNDRAINED_CREATES_MAX_TXIDS as u32;
+fn undrained_creates_drop_the_older_map_at_the_cap() {
+    let per_block = 1_000u32;
+    let per_map = UNDRAINED_MAP_TXIDS as u32 / per_block;
+    let full = UNDRAINED_MAPS as u32 * per_map;
+    let first_of = |height: u32| numbered_txid(height * per_block);
     let mut undrained = UndrainedCreates::default();
-    undrained.note_block(10, (0..cap).map(txid));
-    assert_eq!(undrained.len(), UNDRAINED_CREATES_MAX_TXIDS);
-    assert!(undrained.txids().contains(&txid(0)));
+    for height in 0..full {
+        let lo = height * per_block;
+        undrained.note_block(height, (lo..lo + per_block).map(numbered_txid));
+    }
+    assert!(undrained.holds(&first_of(0)), "the maps hold every height");
+    assert!(undrained.holds(&first_of(full - 1)));
+    let held = undrained.approx_bytes();
+    assert!(
+        held >= (full * per_block) as usize * 37,
+        "a slot for every txid held, got {held}"
+    );
 
-    undrained.note_block(11, std::iter::once(txid(cap)));
-    assert_eq!(undrained.len(), 1, "height 10 left to make room");
-    assert!(undrained.txids().contains(&txid(cap)));
-    assert!(!undrained.txids().contains(&txid(0)));
+    undrained.note_block(full, std::iter::once(first_of(full)));
+    assert!(undrained.holds(&first_of(full)));
+    assert!(
+        !undrained.holds(&first_of(per_map - 1)),
+        "the older map left to make room"
+    );
+    assert!(undrained.holds(&first_of(per_map)), "the newer map stays");
 
-    undrained.drop_through(Some(11));
-    assert!(undrained.is_empty(), "the snapshot passed height 11");
+    undrained.drop_through(Some(full));
+    assert!(!undrained.holds(&first_of(full)));
+    assert_eq!(
+        undrained.approx_bytes(),
+        0,
+        "the snapshot passed every height"
+    );
+}
+
+/// A height the snapshot has reached is dead at once, while the map that
+/// holds it lives on for its higher heights.
+#[test]
+fn a_height_the_snapshot_has_reached_is_not_held() {
+    let mut undrained = UndrainedCreates::default();
+    undrained.note_block(10, std::iter::once(numbered_txid(10)));
+    undrained.note_block(11, std::iter::once(numbered_txid(11)));
+
+    undrained.drop_through(Some(10));
+    assert!(!undrained.holds(&numbered_txid(10)));
+    assert!(undrained.holds(&numbered_txid(11)));
+
+    undrained.drop_through(Some(9));
+    assert!(
+        !undrained.holds(&numbered_txid(10)),
+        "a lower snapshot brings nothing back"
+    );
 }
 
 /// The skip and the load bind together. Wave 1 decodes block 1 and load
@@ -553,90 +583,102 @@ fn a_skipped_parent_binds_from_in_flight_or_not_at_all() {
 /// re-walked height were queued again and may differ.
 #[test]
 fn a_height_decoded_again_replaces_it_and_every_height_above() {
-    let txid = |i: u32| {
-        let mut t = [0u8; 32];
-        t[..4].copy_from_slice(&i.to_le_bytes());
-        t[31] = 1;
-        t
-    };
     let mut undrained = UndrainedCreates::default();
-    undrained.note_block(10, std::iter::once(txid(10)));
-    undrained.note_block(11, std::iter::once(txid(11)));
-    undrained.note_block(12, std::iter::once(txid(12)));
+    undrained.note_block(10, std::iter::once(numbered_txid(10)));
+    undrained.note_block(11, std::iter::once(numbered_txid(11)));
+    undrained.note_block(12, std::iter::once(numbered_txid(12)));
 
-    undrained.note_block(11, std::iter::once(txid(99)));
-    assert_eq!(undrained.len(), 2);
-    assert!(undrained.txids().contains(&txid(10)), "height 10 stays");
-    assert!(undrained.txids().contains(&txid(99)));
+    undrained.note_block(11, std::iter::once(numbered_txid(99)));
+    assert!(undrained.holds(&numbered_txid(10)), "height 10 stays");
+    assert!(undrained.holds(&numbered_txid(99)));
     assert!(
-        !undrained.txids().contains(&txid(11)),
+        !undrained.holds(&numbered_txid(11)),
         "the old height 11 left"
     );
     assert!(
-        !undrained.txids().contains(&txid(12)),
+        !undrained.holds(&numbered_txid(12)),
         "height 12 was above the height walked again"
     );
 
     undrained.drop_through(Some(11));
-    assert!(undrained.is_empty(), "no stale height stays in the list");
+    assert!(!undrained.holds(&numbered_txid(99)));
+    assert_eq!(undrained.approx_bytes(), 0, "no stale height keeps a map");
 }
 
-/// The estimate covers the hash set's slots through long first-in-first-out
-/// churn, which is how lookup uses the set. Removals leave tombstones, and a
-/// table that fills with them while more than half full grows instead of
-/// rehashing in place.
+/// A height decoded again below the newer map takes that map with it and
+/// the heights from there up in the older one. The older map is then freed
+/// as soon as the snapshot passes the last height it still holds.
 #[test]
-fn the_heap_estimate_covers_the_hash_set_through_churn() {
-    let txid = |i: u32| {
-        let mut t = [0u8; 32];
-        t[..4].copy_from_slice(&i.to_le_bytes());
-        t[31] = 1;
-        t
-    };
-    let covered = |undrained: &UndrainedCreates, at: &str| {
-        let floor = undrained.len() * 32 + undrained.txids().capacity() * 33;
-        let got = undrained.approx_bytes();
-        assert!(got >= floor, "{at}: estimate {got} is under {floor}");
-    };
+fn a_height_decoded_again_below_the_newer_map_drops_that_map() {
+    let per_block = 1_000u32;
+    let per_map = UNDRAINED_MAP_TXIDS as u32 / per_block;
+    let full = UNDRAINED_MAPS as u32 * per_map;
+    let first_of = |height: u32| numbered_txid(height * per_block);
+    let mut undrained = UndrainedCreates::default();
+    for height in 0..full {
+        let lo = height * per_block;
+        undrained.note_block(height, (lo..lo + per_block).map(numbered_txid));
+    }
+    let again = per_map - 5;
+    let fresh = full * per_block;
+
+    undrained.note_block(again, (fresh..fresh + per_block).map(numbered_txid));
+    assert!(undrained.holds(&numbered_txid(fresh)));
+    assert!(undrained.holds(&first_of(again - 1)), "lower heights stay");
+    for gone in [again, per_map - 1, per_map, full - 1] {
+        assert!(!undrained.holds(&first_of(gone)), "height {gone} left");
+    }
+
+    undrained.drop_through(Some(again - 1));
+    assert!(undrained.holds(&numbered_txid(fresh)));
+    let held = undrained.approx_bytes();
+    assert!(
+        held < (1 << 19) * 37,
+        "the older map holds no live height, got {held}"
+    );
+}
+
+/// Lookup fills the set first in, first out, and every tenth height here is
+/// decoded again as a different block. However long that runs, the set
+/// holds no more than two maps of 2^19 slots at 37 B a slot.
+#[test]
+fn the_heap_stays_within_two_maps_through_churn() {
+    let two_maps = 2 * (1 << 19) * 37;
     let mut undrained = UndrainedCreates::default();
     let mut next = 0u32;
     for height in 0..400u32 {
-        undrained.note_block(height, (next..next + 100).map(txid));
-        next += 100;
-        covered(&undrained, "after a block");
-        if let Some(passed) = height.checked_sub(141) {
-            undrained.drop_through(Some(passed));
-            covered(&undrained, "after a snapshot");
+        undrained.note_block(height, (next..next + 5_000).map(numbered_txid));
+        next += 5_000;
+        if height % 10 == 9 {
+            undrained.note_block(height, (next..next + 5_000).map(numbered_txid));
+            next += 5_000;
         }
+        if let Some(passed) = height.checked_sub(180) {
+            undrained.drop_through(Some(passed));
+        }
+        let held = undrained.approx_bytes();
+        assert!(
+            held <= two_maps,
+            "height {height}: {held} B is over two maps"
+        );
     }
 }
 
-/// The set reports the heap it holds: 32 B per listed txid and the hash set
-/// at its capacity. A snapshot that passes every height frees the list. The
-/// hash set keeps its slots, so they stay counted.
+/// A snapshot that passes every recorded height gives the heap back.
 #[test]
-fn undrained_creates_report_their_heap() {
-    let txid = |i: u32| {
-        let mut t = [0u8; 32];
-        t[..4].copy_from_slice(&i.to_le_bytes());
-        t[31] = 1;
-        t
-    };
+fn undrained_creates_give_their_heap_back_when_every_height_is_dead() {
     let mut undrained = UndrainedCreates::default();
     assert_eq!(undrained.approx_bytes(), 0);
 
-    undrained.note_block(10, (0..1_000).map(txid));
+    undrained.note_block(10, (0..1_000).map(numbered_txid));
     let held = undrained.approx_bytes();
     assert!(
-        held >= 1_000 * 32 + 1_000 * 33,
-        "1,000 txids in the list and in the set, got {held}"
+        held >= 1_000 * 37,
+        "1,000 txids with a height each, got {held}"
     );
 
     undrained.drop_through(Some(10));
-    assert!(undrained.is_empty());
-    let after = undrained.approx_bytes();
-    assert_eq!(after, held - 1_000 * 32, "the list is freed");
-    assert!(after >= 1_000 * 33, "the set keeps its slots, got {after}");
+    assert_eq!(undrained.approx_bytes(), 0);
 }
 
 #[test]
