@@ -1990,6 +1990,174 @@ fn retain_headers_missing_first_fk_is_corrupt() {
     );
 }
 
+/// Outputs of the overlay test create with this fk. The count differs
+/// between neighbors, so a row built for the wrong create has the wrong
+/// length.
+fn overlay_n_out(fk: Fk) -> u32 {
+    3 + (fk.0 % 3) as u32
+}
+
+/// One records row per fk, of [`overlay_n_out`] outputs. Each spender's
+/// prevouts become its edges, the position in the list being the vin.
+fn overlay_plan(
+    fks: &[Fk],
+    spends: &[(Fk, &[(Fk, u32)])],
+) -> rbitcoin_query::archive::ArchiveWritePlan {
+    let pin = |fk: &Fk| {
+        rbitcoin_query::CreatePinInner::records(
+            TxRecord {
+                txid: [fk.0 as u8; 32],
+                version: 1,
+                locktime: 0,
+                input_count: 0,
+                output_count: overlay_n_out(*fk),
+            },
+            (0..overlay_n_out(*fk))
+                .map(|_| OutputRecord::unspent(1, vec![0x51]))
+                .collect(),
+        )
+    };
+    let mut plan = rbitcoin_query::archive::ArchiveWritePlan::empty();
+    plan.planned_fks = fks.to_vec();
+    plan.packed = fks.iter().map(|fk| (pin(fk), Vec::new())).collect();
+    plan.batch_pin = fks.iter().map(pin).collect();
+    for &(spend_fk, prevouts) in spends {
+        plan.edges.insert(
+            spend_fk.0,
+            prevouts
+                .iter()
+                .enumerate()
+                .map(|(vin, &(create_fk, vout))| rbitcoin_query::SpendEdge {
+                    prev_txid: [0; 32],
+                    vout,
+                    spend_fk,
+                    create_fk,
+                    vin: vin as u32,
+                })
+                .collect(),
+        );
+    }
+    plan
+}
+
+/// The overlay image read back as `(vout, spend_fk, vin)` per packed row,
+/// lowest vout first. A zero slot is an output nothing in the batch spends.
+/// The byte range of each row is worked out here from `planned_fks`, so the
+/// image must lay its rows out in that order and at those lengths.
+fn overlay_rows(plan: &rbitcoin_query::archive::ArchiveWritePlan) -> Vec<Vec<(u32, Fk, u32)>> {
+    const SLOT: usize = OutputRecord::SPENT_SLOT_LEN;
+    let image = plan.same_batch_spent_overlay().expect("overlay");
+    let lens: Vec<u64> = plan
+        .planned_fks
+        .iter()
+        .map(|fk| u64::from(overlay_n_out(*fk)) * SLOT as u64)
+        .collect();
+    assert_eq!(image.record_lens(), lens);
+    assert_eq!(image.bytes().len() as u64, lens.iter().sum::<u64>());
+    let mut start = 0usize;
+    plan.planned_fks
+        .iter()
+        .map(|fk| {
+            let row = (0..overlay_n_out(*fk))
+                .filter_map(|vout| {
+                    let off = start + (vout as usize) * SLOT;
+                    let (_flags, spend_fk, vin) = rbitcoin_store::tx_table::decode_spent_slot(
+                        &image.bytes()[off..off + SLOT],
+                    )
+                    .expect("slot");
+                    (!spend_fk.is_null()).then_some((vout, spend_fk, vin))
+                })
+                .collect();
+            start += overlay_n_out(*fk) as usize * SLOT;
+            row
+        })
+        .collect()
+}
+
+/// Fks 10..=14 in three headers. 11 spends two outputs of 10. 13 has a
+/// coinbase-style null edge, spends 12, and spends a create outside the
+/// batch whose id is above it. 14 spends 13 and a create just below the
+/// batch.
+const OVERLAY_SPENDS: &[(Fk, &[(Fk, u32)])] = &[
+    (Fk(11), &[(Fk(10), 1), (Fk(10), 0)]),
+    (Fk(13), &[(Fk::NULL, u32::MAX), (Fk(12), 0), (Fk(900), 3)]),
+    (Fk(14), &[(Fk(13), 2), (Fk(9), 0)]),
+];
+
+/// The Class A overlay puts a same-batch spend on the packed row of its
+/// create, lowest vout first. A spend of a create outside the plan has no row.
+#[test]
+fn same_batch_overlay_puts_each_spend_on_its_create_row() {
+    let plan = overlay_plan(&[Fk(10), Fk(11), Fk(12), Fk(13), Fk(14)], OVERLAY_SPENDS);
+    assert_eq!(
+        overlay_rows(&plan),
+        vec![
+            vec![(0, Fk(11), 1), (1, Fk(11), 0)],
+            vec![],
+            vec![(0, Fk(13), 1)],
+            vec![(2, Fk(14), 0)],
+            vec![],
+        ]
+    );
+    assert!(overlay_rows(&overlay_plan(&[], OVERLAY_SPENDS)).is_empty());
+}
+
+/// A retry drops the leading header, which already has its body. The plan
+/// then starts above the dropped creates: a spend of one of them gets no
+/// row, and the rows that remain start at zero.
+#[test]
+fn same_batch_overlay_after_a_retry_drops_the_leading_header() {
+    let mut plan = overlay_plan(&[Fk(10), Fk(11), Fk(12), Fk(13), Fk(14)], OVERLAY_SPENDS);
+    plan.per_header_ranges = vec![(Fk(1), Fk(10), 2), (Fk(2), Fk(12), 1), (Fk(3), Fk(13), 2)];
+    assert!(plan
+        .retain_headers_needing_body(|hfk| Ok(hfk == Fk(1)))
+        .unwrap());
+    assert_eq!(plan.planned_fks, vec![Fk(12), Fk(13), Fk(14)]);
+    assert_eq!(
+        overlay_rows(&plan),
+        vec![vec![(0, Fk(13), 1)], vec![(2, Fk(14), 0)], vec![]]
+    );
+}
+
+/// A plan whose middle header was dropped has a gap in its fks. Such a plan
+/// fails its commit after the append (`put_full_batch fk mismatch`), and the
+/// overlay still must not shift the rows after the gap onto a neighbor.
+#[test]
+fn same_batch_overlay_does_not_shift_rows_across_a_gap() {
+    let mut plan = overlay_plan(&[Fk(10), Fk(11), Fk(12), Fk(13), Fk(14)], OVERLAY_SPENDS);
+    plan.per_header_ranges = vec![(Fk(1), Fk(10), 2), (Fk(2), Fk(12), 1), (Fk(3), Fk(13), 2)];
+    assert!(plan
+        .retain_headers_needing_body(|hfk| Ok(hfk == Fk(2)))
+        .unwrap());
+    assert_eq!(plan.planned_fks, vec![Fk(10), Fk(11), Fk(13), Fk(14)]);
+    assert_eq!(
+        overlay_rows(&plan),
+        vec![
+            vec![(0, Fk(11), 1), (1, Fk(11), 0)],
+            vec![],
+            vec![(2, Fk(14), 0)],
+            vec![],
+        ]
+    );
+}
+
+/// The row is the position of the create in `planned_fks`, not its
+/// distance from the lowest id.
+#[test]
+fn same_batch_overlay_follows_an_unsorted_plan() {
+    let plan = overlay_plan(&[Fk(13), Fk(10), Fk(14), Fk(11), Fk(12)], OVERLAY_SPENDS);
+    assert_eq!(
+        overlay_rows(&plan),
+        vec![
+            vec![(2, Fk(14), 0)],
+            vec![(0, Fk(11), 1), (1, Fk(11), 0)],
+            vec![],
+            vec![],
+            vec![(0, Fk(13), 1)],
+        ]
+    );
+}
+
 /// `wire_edges_match` is the release tripwire for a prevout the edge
 /// builder did not copy from the wire tx. A coinbase input is skipped.
 #[test]
