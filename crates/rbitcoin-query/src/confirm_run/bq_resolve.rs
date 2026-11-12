@@ -11,7 +11,9 @@
 //! generation) are omitted from TipOnly need.
 
 use super::*;
-use crate::{BatchParentIds, IdMap, ResolvedWire, TxPrecompute, TxidHasher, U32Map, U64Map};
+use crate::{
+    BatchParentIds, IdMap, ResolvedWire, TxPrecompute, TxidHasher, TxidMap, U32Map, U64Map,
+};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::BuildHasherDefault;
 use std::sync::Arc;
@@ -35,76 +37,90 @@ pub const BQ_RESOLVE_WAVE_MIN_INPUTS: u32 = 8000;
 /// Safety cap so one megablock run cannot stall the wave.
 pub const BQ_RESOLVE_WAVE_MAX_KEYS: usize = 256_000;
 
-/// Hard cap on txids in [`UndrainedCreates`]. Past it the lowest heights
-/// leave the set first, and spends of their creates are read from `tx.head`
+/// Txids one map of [`UndrainedCreates`] takes. The block that would pass
+/// it starts the next map.
+#[doc(hidden)]
+pub const UNDRAINED_MAP_TXIDS: usize = 450_000;
+/// Maps [`UndrainedCreates`] keeps. The block that needs a third pushes the
+/// older map out whole, and spends of its creates are read from `tx.head`
 /// as before.
-pub const UNDRAINED_CREATES_MAX_TXIDS: usize = 900_000;
+#[doc(hidden)]
+pub const UNDRAINED_MAPS: usize = 2;
+
+/// What a map stores for a txid: the height that created it plus one. Zero
+/// is left for a txid whose height was decoded again.
+fn level(height: u32) -> u32 {
+    height.saturating_add(1)
+}
+
+const FORGOTTEN: u32 = 0;
 
 /// Creates of blocks this lookup thread has decoded that the `tx.head`
 /// drain and the fence have not passed.
 ///
-/// A prev txid in the set is not TipOnly need. Load binds it from
+/// A prev txid the set holds is not TipOnly need. Load binds it from
 /// in-flight, which keeps every pack at or above a wave's drain+fence
-/// snapshot until that wave's last batch has read it. This set holds only
+/// snapshot until that wave's last batch has read it. The set holds only
 /// heights above the same snapshot. Load clears in-flight when the re-arm
-/// generation changes, and the set empties on the same change. Membership
-/// only removes a key from the store read. It binds nothing, and a txid the
-/// set does not hold is read as before.
+/// generation changes, and the set empties on the same change. Holding a
+/// txid only removes a key from the store read. It binds nothing, and a
+/// txid the set does not hold is read as before.
 ///
-/// RAM for CPU: 32 B per txid in the height list plus the hash set. By
-/// [`Self::approx_bytes`] that is 29 to 45 MiB at 400,000 txids and 60 to
-/// 93 MiB at the [`UNDRAINED_CREATES_MAX_TXIDS`] cap, the higher figure
-/// once churn has doubled the hash set. It saves a probe of every sealed
-/// `tx.head` segment per txid.
+/// The keys are whole txids. A prev held by mistake is left to an in-flight
+/// bind that cannot happen, which is `parent create_fk unresolved`, so the
+/// set never answers from a shortened hash.
+///
+/// RAM for CPU. A txid is stored once, with its level, in a map that only
+/// fills and is freed whole. Nothing removes a txid by itself: a height the
+/// snapshot has reached or that was decoded again is dead where it lies,
+/// and a map goes when its last height is dead. Dead txids count toward a
+/// map's fill, so the set always holds the newest [`UNDRAINED_MAP_TXIDS`]
+/// and at most twice that. By [`Self::approx_bytes`] a full map is 18.5 MiB
+/// and both are 37 MiB. A miss probes each map, and a height decoded again
+/// walks the one map it lies in. The set saves a probe of every sealed
+/// `tx.head` segment per txid it holds.
 #[derive(Debug, Default)]
 pub struct UndrainedCreates {
     gen: Option<u32>,
-    txids: HashSet<[u8; 32], BuildHasherDefault<TxidHasher>>,
-    /// Ascending by height.
-    blocks: VecDeque<(u32, Box<[[u8; 32]]>)>,
-    /// Largest `txids.capacity()` seen right after a block went in. The
-    /// hash set never gives slots back, and its `capacity()` falls as
-    /// removals leave tombstones, so the high-water mark is its real size.
-    slots: usize,
+    /// Ascending by height. Only the last one takes blocks.
+    runs: VecDeque<CreateRun>,
+    /// A [`level`] at or below it is dead.
+    dead_through: u32,
+}
+
+/// The creates of the heights `first..=top`, each with its [`level`].
+#[derive(Debug)]
+struct CreateRun {
+    first: u32,
+    top: u32,
+    levels: TxidMap<u32>,
 }
 
 impl UndrainedCreates {
+    /// A create of `txid` is recorded at a height above the last snapshot.
     #[doc(hidden)]
-    pub fn txids(&self) -> &HashSet<[u8; 32], BuildHasherDefault<TxidHasher>> {
-        &self.txids
+    pub fn holds(&self, txid: &[u8; 32]) -> bool {
+        let live = |level: &u32| *level > self.dead_through;
+        self.runs
+            .iter()
+            .rev()
+            .any(|run| run.levels.get(txid).is_some_and(live))
     }
 
-    #[doc(hidden)]
-    pub fn len(&self) -> usize {
-        self.txids.len()
-    }
-
-    #[doc(hidden)]
-    pub fn is_empty(&self) -> bool {
-        self.txids.is_empty()
-    }
-
-    /// Estimated heap the set holds: 32 B per txid in the height list, the
-    /// list's rows, and the hash set's buckets (a 32 B key and a control
-    /// byte each, eight buckets for every seven slots of capacity). The
-    /// buckets stay when txids leave, so this does not fall with
-    /// [`Self::len`]. Under churn the hash set can hold twice the buckets
-    /// its txids need.
+    /// Estimated heap the set holds: every map's slots, each a 32 B txid,
+    /// its level, and a control byte, eight slots for every seven of
+    /// capacity.
     #[doc(hidden)]
     pub fn approx_bytes(&self) -> usize {
-        let listed: usize = self.blocks.iter().map(|(_, txids)| txids.len()).sum();
-        let rows = self
-            .blocks
-            .capacity()
-            .saturating_mul(std::mem::size_of::<(u32, Box<[[u8; 32]]>)>());
-        let buckets = match self.slots {
-            0 => 0,
-            slots => (slots.saturating_mul(8) / 7).next_power_of_two(),
-        };
-        listed
-            .saturating_mul(32)
-            .saturating_add(rows)
-            .saturating_add(buckets.saturating_mul(33))
+        let slot = std::mem::size_of::<([u8; 32], u32)>().saturating_add(1);
+        self.runs
+            .iter()
+            .map(|run| match run.levels.capacity() {
+                0 => 0,
+                capacity => (capacity.saturating_mul(8) / 7).next_power_of_two(),
+            })
+            .fold(0usize, |slots, n| slots.saturating_add(n))
+            .saturating_mul(slot)
     }
 
     /// Empty the set unless it was filled under re-arm generation `gen`.
@@ -113,22 +129,26 @@ impl UndrainedCreates {
         if self.gen == Some(gen) {
             return;
         }
-        self.txids.clear();
-        self.blocks.clear();
-        self.gen = Some(gen);
+        *self = Self {
+            gen: Some(gen),
+            ..Self::default()
+        };
     }
 
-    /// Drop the heights a drain+fence snapshot has reached. `None` keeps all.
+    /// Mark the heights a drain+fence snapshot has reached dead, and free
+    /// the maps that hold no other height. `None` keeps all.
     #[doc(hidden)]
     pub fn drop_through(&mut self, hi: Option<u32>) {
         let Some(hi) = hi else {
             return;
         };
-        while self.blocks.front().is_some_and(|(h, _)| *h <= hi) {
-            let Some((_, txids)) = self.blocks.pop_front() else {
-                break;
-            };
-            self.forget(&txids);
+        self.dead_through = self.dead_through.max(level(hi));
+        while self
+            .runs
+            .front()
+            .is_some_and(|run| level(run.top) <= self.dead_through)
+        {
+            self.runs.pop_front();
         }
     }
 
@@ -136,31 +156,48 @@ impl UndrainedCreates {
     /// every height above it: lookup decodes in ascending order, so a
     /// height seen again means the rows from there up were queued again.
     #[doc(hidden)]
-    pub fn note_block(&mut self, height: u32, txids: impl Iterator<Item = [u8; 32]>) {
-        while self.blocks.back().is_some_and(|(h, _)| *h >= height) {
-            let Some((_, stale)) = self.blocks.pop_back() else {
-                break;
-            };
-            self.forget(&stale);
+    pub fn note_block(&mut self, height: u32, txids: impl ExactSizeIterator<Item = [u8; 32]>) {
+        self.forget_from(height);
+        let fits = self
+            .runs
+            .back()
+            .is_some_and(|run| run.levels.len().saturating_add(txids.len()) <= UNDRAINED_MAP_TXIDS);
+        if !fits {
+            if self.runs.len() >= UNDRAINED_MAPS {
+                self.runs.pop_front();
+            }
+            self.runs.push_back(CreateRun {
+                first: height,
+                top: height,
+                levels: TxidMap::default(),
+            });
         }
-        let txids: Box<[[u8; 32]]> = txids.collect();
-        while self.txids.len().saturating_add(txids.len()) > UNDRAINED_CREATES_MAX_TXIDS {
-            let Some((_, lowest)) = self.blocks.pop_front() else {
-                break;
-            };
-            self.forget(&lowest);
-        }
-        self.txids.extend(txids.iter().copied());
-        self.slots = self.slots.max(self.txids.capacity());
-        self.blocks.push_back((height, txids));
+        let Some(run) = self.runs.back_mut() else {
+            return;
+        };
+        run.top = height;
+        run.levels.extend(txids.map(|txid| (txid, level(height))));
     }
 
-    /// A txid two recorded heights share leaves the set with the first of
-    /// them. It is then read from `tx.head`, which is always correct.
-    fn forget(&mut self, txids: &[[u8; 32]]) {
-        for txid in txids {
-            self.txids.remove(txid);
+    /// Forget `height` and every height above it. A map that starts there
+    /// or above leaves whole. The one map that starts below keeps its
+    /// txids and has those heights marked.
+    fn forget_from(&mut self, height: u32) {
+        while self.runs.back().is_some_and(|run| run.first >= height) {
+            self.runs.pop_back();
         }
+        let Some(run) = self.runs.back_mut() else {
+            return;
+        };
+        if run.top < height {
+            return;
+        }
+        for at in run.levels.values_mut() {
+            if *at > height {
+                *at = FORGOTTEN;
+            }
+        }
+        run.top = height.saturating_sub(1);
     }
 }
 
@@ -177,10 +214,10 @@ impl WaveKeys {
     /// Move every skipped prev that `skip` no longer holds back into the
     /// need. Returns the inputs still left out.
     #[doc(hidden)]
-    pub fn readmit(&mut self, skip: &HashSet<[u8; 32], BuildHasherDefault<TxidHasher>>) -> u32 {
+    pub fn readmit(&mut self, skip: &UndrainedCreates) -> u32 {
         let mut left_out = 0u32;
         for prev in self.skipped.drain(..) {
-            if skip.contains(&prev) {
+            if skip.holds(&prev) {
                 left_out = left_out.saturating_add(1);
             } else {
                 self.need.insert(prev);
@@ -307,16 +344,16 @@ pub struct BqResolveWaveStats {
 
 /// Push external prev_txids (+ pre-BIP34 create txids) into the wave TipOnly set.
 ///
-/// Spend keys record every non-coinbase prev (including the ones in `skip`)
-/// so a later load chunk can bind in-flight. A prev in `skip` goes to
-/// [`WaveKeys::skipped`], not the need.
+/// Spend keys record every non-coinbase prev (including the ones `skip`
+/// holds) so a later load chunk can bind in-flight. A prev `skip` holds goes
+/// to [`WaveKeys::skipped`], not the need.
 #[doc(hidden)]
 pub fn push_resolve_keys(
     params: &ChainParams,
     height: u32,
     block: &Block,
     pres: &[TxPrecompute],
-    skip: &HashSet<[u8; 32], BuildHasherDefault<TxidHasher>>,
+    skip: &UndrainedCreates,
     keys: &mut WaveKeys,
     n_inputs: u32,
 ) -> Vec<([u8; 32], u32)> {
@@ -332,13 +369,13 @@ pub fn push_resolve_keys(
                 continue;
             }
             spends.push((prev, inp.previous_output.vout));
-            if skip.contains(&prev) {
+            if skip.holds(&prev) {
                 keys.skipped.push(prev);
             } else {
                 keys.need.insert(prev);
             }
         }
-        if !bip34 && !skip.contains(&p.txid) {
+        if !bip34 && !skip.holds(&p.txid) {
             keys.need.insert(p.txid);
         }
     }
@@ -503,7 +540,7 @@ pub fn confirm_bq_resolve_wave_capped(
             h,
             block.as_ref(),
             pres.as_ref(),
-            undrained.txids(),
+            undrained,
             &mut keys,
             n_inputs_at.get(&h).copied().unwrap_or(0),
         );
@@ -519,7 +556,7 @@ pub fn confirm_bq_resolve_wave_capped(
     let t_settle = Instant::now();
     let drain_fence_hi = query.drain_and_fence_hi();
     undrained.drop_through(drain_fence_hi);
-    stats.undrained_skip = keys.readmit(undrained.txids());
+    stats.undrained_skip = keys.readmit(undrained);
     stats.collect_ns = stats
         .collect_ns
         .saturating_add(t_settle.elapsed().as_nanos() as u64);
