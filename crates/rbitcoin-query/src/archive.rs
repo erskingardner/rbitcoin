@@ -587,57 +587,51 @@ pub fn create_pin_approx_bytes(pin: &CreatePin) -> usize {
 
 /// Packed row of each planned create id.
 ///
-/// One contiguous id run is the IBD shape, and the row is `id - first`. A
-/// null fk, a gap, a repeat, or ids out of order keep the map, so an id
-/// outside the run does not land on a neighbor's row.
+/// The planner hands out one ascending run, `next_tx_start.max(1)` and up,
+/// and the row of an id in such a list is `id - first`. Neither
+/// [`ArchiveWritePlan::append`] nor
+/// [`ArchiveWritePlan::retain_headers_needing_body`] checks that the list
+/// is still a run, so [`Self::from_fks`] does.
 #[doc(hidden)]
-pub enum PlannedRows {
-    Run { first: u64, len: u64 },
-    Map(crate::U64Map<usize>),
+#[derive(Debug)]
+pub struct PlannedRows {
+    first: u64,
+    len: u64,
 }
 
+/// Planned fks the appender cannot return: it hands out `count+1, count+2, …`.
+const PLAN_FK_MISMATCH: StoreError =
+    StoreError::Corrupt("tx put_full_batch fk mismatch (plan not committed in order)");
+
 impl PlannedRows {
-    pub fn from_fks(fks: &[Fk]) -> Self {
-        if let Some(first) = contiguous_run_first(fks) {
-            return Self::Run {
-                first,
-                len: fks.len() as u64,
-            };
+    /// `fks` must be `first, first + 1, …` with no null fk. Any other list
+    /// fails the commit's fk comparison, so it gets that error here, where
+    /// a commit has not appended yet.
+    pub fn from_fks(fks: &[Fk]) -> Result<Self, StoreError> {
+        let first = fks
+            .first()
+            .and_then(|fk| fk.get())
+            .ok_or(PLAN_FK_MISMATCH)?;
+        let one_run = fks
+            .iter()
+            .zip(0u64..)
+            .all(|(fk, i)| fk.get().is_some_and(|id| first.checked_add(i) == Some(id)));
+        if !one_run {
+            return Err(PLAN_FK_MISMATCH);
         }
-        let mut rows = crate::U64Map::with_capacity_and_hasher(fks.len(), Default::default());
-        for (i, fk) in fks.iter().enumerate() {
-            if let Some(id) = fk.get() {
-                rows.insert(id, i);
-            }
-        }
-        Self::Map(rows)
+        Ok(Self {
+            first,
+            len: fks.len() as u64,
+        })
     }
 
     #[inline]
     pub fn row(&self, create_id: u64) -> Option<usize> {
-        match self {
-            Self::Run { first, len } => create_id
-                .checked_sub(*first)
-                .filter(|i| i < len)
-                .map(|i| i as usize),
-            Self::Map(rows) => rows.get(&create_id).copied(),
-        }
+        create_id
+            .checked_sub(self.first)
+            .filter(|i| *i < self.len)
+            .map(|i| i as usize)
     }
-}
-
-/// The first id when `fks` is `first, first + 1, …` with no null fk.
-fn contiguous_run_first(fks: &[Fk]) -> Option<u64> {
-    let mut ids = fks.iter().map(|fk| fk.get());
-    let first = ids.next()??;
-    let mut prev = first;
-    for id in ids {
-        let next = prev.checked_add(1)?;
-        if id != Some(next) {
-            return None;
-        }
-        prev = next;
-    }
-    Some(first)
 }
 
 /// Write-ready plan batch from lookup/load to commit (writer).
@@ -792,7 +786,7 @@ impl ArchiveWritePlan {
         if image.create_count() == 0 {
             return Ok(image);
         }
-        let rows = PlannedRows::from_fks(&self.planned_fks);
+        let rows = PlannedRows::from_fks(&self.planned_fks)?;
         for eds in self.edges.values() {
             for e in eds {
                 let Some(i) = e.create_fk.get().and_then(|cid| rows.row(cid)) else {
@@ -1188,7 +1182,7 @@ pub fn stamp_wire_plan_txstat(
     if plan.packed.is_empty() {
         return Ok(());
     }
-    let rows = PlannedRows::from_fks(&plan.planned_fks);
+    let rows = PlannedRows::from_fks(&plan.planned_fks)?;
     let vals = store_prevout_values(query, plan, &rows)?;
     let mut fees = Vec::with_capacity(plan.packed.len());
     let mut sizes = Vec::with_capacity(plan.packed.len());
@@ -1963,9 +1957,7 @@ impl Query {
             return Err(StoreError::Corrupt("invariant: append loc length"));
         }
         if got_tx_fks != plan.planned_fks {
-            return Err(StoreError::Corrupt(
-                "tx put_full_batch fk mismatch (plan not committed in order)",
-            ));
+            return Err(PLAN_FK_MISMATCH);
         }
         if self.prune_seqsigwit() {
             let ins = seqsigwit_rows_for_prune(&mut plan)?;

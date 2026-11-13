@@ -71,6 +71,29 @@ fn commit_refuses_unstamped_wire_plan() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The appender hands out `count+1, count+2, …`, so planned fks that are
+/// not one ascending run cannot commit. Commit refuses them with the fk
+/// comparison's error before it appends: no body is written.
+#[test]
+fn commit_refuses_planned_fks_that_are_not_one_run() {
+    let (dir, q) = temp_query("plan-fks-not-one-run");
+    let need = vec![
+        (Fk(1), vec![coinbase_apply(1)]),
+        (Fk(2), vec![coinbase_apply(2)]),
+    ];
+    let mut plan = plan_applies(&q, &need, 1, &rbitcoin_query::InFlight::new(), None).unwrap();
+    rbitcoin_query::archive::stamp_wire_plan_txstat(&q, &mut plan).unwrap();
+    assert_eq!(plan.planned_fks, vec![Fk(1), Fk(2)]);
+    plan.planned_fks.swap(0, 1);
+    let err = q.archive_commit_plan(plan).unwrap_err();
+    assert!(
+        err.to_string().contains("put_full_batch fk mismatch"),
+        "{err}"
+    );
+    assert_eq!(q.tx_body_count(), 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 fn size_plan(tag: u8, with_size: bool) -> rbitcoin_query::archive::ArchiveWritePlan {
     let mut plan = rbitcoin_query::archive::ArchiveWritePlan::empty();
     plan.packed = vec![(
@@ -122,9 +145,11 @@ fn spent_overlay_names_the_first_spender_of_a_vout() {
         vin,
     };
     for later in 3..=40u64 {
+        // One row per fk up to the later spender: a plan's fks are one run.
         let mut plan = size_plan(1, false);
-        plan.append(size_plan(2, false));
-        plan.append(size_plan(3, false));
+        for tag in 2..=later {
+            plan.append(size_plan(tag as u8, false));
+        }
         plan.packed[0].0 = rbitcoin_query::CreatePinInner::records(
             TxRecord {
                 txid: [1; 32],
@@ -138,7 +163,7 @@ fn spent_overlay_names_the_first_spender_of_a_vout() {
                 OutputRecord::unspent(1, vec![0x51]),
             ],
         );
-        plan.planned_fks = vec![Fk(1), Fk(2), Fk(later)];
+        plan.planned_fks = (1..=later).map(Fk).collect();
         plan.edges.insert(2, vec![edge(2, 0, 0)]);
         plan.edges
             .insert(later, vec![edge(later, 0, 0), edge(later, 1, 1)]);
@@ -2119,86 +2144,51 @@ fn same_batch_overlay_after_a_retry_drops_the_leading_header() {
     );
 }
 
-/// A plan whose middle header was dropped has a gap in its fks. Such a plan
-/// fails its commit after the append (`put_full_batch fk mismatch`), and the
-/// overlay still must not shift the rows after the gap onto a neighbor.
+/// One ascending run of planned fks is indexed by subtraction, and an id
+/// below the run or past its end has no row. Any other list is refused.
+/// These are the neighboring shapes and bounds of the one reject
+/// `commit_refuses_planned_fks_that_are_not_one_run` drives through commit.
 #[test]
-fn same_batch_overlay_does_not_shift_rows_across_a_gap() {
-    let mut plan = overlay_plan(&[Fk(10), Fk(11), Fk(12), Fk(13), Fk(14)], OVERLAY_SPENDS);
-    plan.per_header_ranges = vec![(Fk(1), Fk(10), 2), (Fk(2), Fk(12), 1), (Fk(3), Fk(13), 2)];
-    assert!(plan
-        .retain_headers_needing_body(|hfk| Ok(hfk == Fk(2)))
-        .unwrap());
-    assert_eq!(plan.planned_fks, vec![Fk(10), Fk(11), Fk(13), Fk(14)]);
-    assert_eq!(
-        overlay_rows(&plan),
-        vec![
-            vec![(0, Fk(11), 1), (1, Fk(11), 0)],
-            vec![],
-            vec![(2, Fk(14), 0)],
-            vec![],
-        ]
-    );
-}
-
-/// The row is the position of the create in `planned_fks`, not its
-/// distance from the lowest id.
-#[test]
-fn same_batch_overlay_follows_an_unsorted_plan() {
-    let plan = overlay_plan(&[Fk(13), Fk(10), Fk(14), Fk(11), Fk(12)], OVERLAY_SPENDS);
-    assert_eq!(
-        overlay_rows(&plan),
-        vec![
-            vec![(2, Fk(14), 0)],
-            vec![(0, Fk(11), 1), (1, Fk(11), 0)],
-            vec![],
-            vec![],
-            vec![(0, Fk(13), 1)],
-        ]
-    );
-}
-
-/// One contiguous run of planned fks is indexed by subtraction. Anything
-/// else keeps the map, so an id in a gap, below the run, or past its end
-/// does not land on a neighbor's row.
-#[test]
-fn planned_rows_subtract_on_one_run_and_map_otherwise() {
+fn planned_rows_subtract_on_one_run_and_refuse_anything_else() {
     use rbitcoin_query::archive::PlannedRows;
 
-    type Case<'a> = (&'a [Fk], bool, &'a [(u64, Option<usize>)]);
-    let cases: &[Case] = &[
+    type Run<'a> = (&'a [Fk], &'a [(u64, Option<usize>)]);
+    let runs: &[Run] = &[
         (
             &[Fk(7), Fk(8), Fk(9)],
-            true,
             &[(7, Some(0)), (9, Some(2)), (6, None), (10, None)],
         ),
+        (&[Fk(7)], &[(7, Some(0)), (8, None)]),
         (
             &[Fk(u64::MAX - 1), Fk(u64::MAX)],
-            true,
             &[(u64::MAX, Some(1)), (1, None)],
         ),
-        (
-            &[Fk(7), Fk(8), Fk(10)],
-            false,
-            &[(8, Some(1)), (9, None), (10, Some(2))],
-        ),
-        (&[Fk(8), Fk(7), Fk(9)], false, &[(7, Some(1)), (8, Some(0))]),
-        // A repeat keeps the later row, as the map did.
-        (&[Fk(7), Fk(7), Fk(8)], false, &[(7, Some(1))]),
-        // A null fk is not a create, at the front or inside, and it breaks
-        // the run: the id after it keeps its position, not its distance.
-        (&[Fk::NULL, Fk(1), Fk(2)], false, &[(0, None), (2, Some(2))]),
-        (&[Fk(7), Fk::NULL, Fk(9)], false, &[(8, None), (9, Some(2))]),
-        (&[Fk(7), Fk::NULL, Fk(8)], false, &[(8, Some(2)), (9, None)]),
     ];
-    for &(fks, one_run, lookups) in cases {
-        let rows = PlannedRows::from_fks(fks);
-        assert_eq!(matches!(rows, PlannedRows::Run { .. }), one_run, "{fks:?}");
+    for &(fks, lookups) in runs {
+        let rows = PlannedRows::from_fks(fks).expect("one run");
         for &(id, row) in lookups {
             assert_eq!(rows.row(id), row, "{fks:?} id {id}");
         }
     }
-    assert_eq!(PlannedRows::from_fks(&[]).row(1), None);
+
+    let refused: &[&[Fk]] = &[
+        &[],
+        &[Fk(7), Fk(8), Fk(10)],
+        &[Fk(8), Fk(7), Fk(9)],
+        // Same first, last and length as a run of four.
+        &[Fk(7), Fk(9), Fk(8), Fk(10)],
+        &[Fk(7), Fk(7), Fk(8)],
+        &[Fk(7), Fk(7), Fk(9)],
+        &[Fk::NULL],
+        &[Fk::NULL, Fk(1), Fk(2)],
+        &[Fk(7), Fk::NULL, Fk(9)],
+        &[Fk(u64::MAX), Fk::NULL],
+        &[Fk(u64::MAX), Fk(u64::MAX)],
+    ];
+    for &fks in refused {
+        let err = PlannedRows::from_fks(fks).expect_err("not one run");
+        assert!(err.to_string().contains("fk mismatch"), "{fks:?}: {err}");
+    }
 }
 
 /// `wire_edges_match` is the release tripwire for a prevout the edge

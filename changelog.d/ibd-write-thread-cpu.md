@@ -10,5 +10,7 @@ Changed
 - **The initial-download write thread finds a same-batch parent's row by
   subtraction.** The transaction ids of one write batch are a single
   contiguous run, so the commit no longer builds a hash map of the batch to
-  mark outputs spent inside it. A plan whose ids are not one run still uses
-  the map. The bytes written are the same.
+  mark outputs spent inside it. A plan whose ids are not one run could not
+  commit before either. It gets the same `fk mismatch` error before its
+  bodies are appended, where it used to get it after. A batch that commits
+  writes the same bytes.

@@ -134,7 +134,7 @@ repair (`scripts/repair-idx-double-append.py`) does not apply to schema 22.
 |-------|-------|------|-----|
 | `lookup stage miss (load cold denserels forbidden)` | S0/S3 | Load Forbid + parents without plan range | Lookup always fills `external_parents` body; load outs by `txout` range only |
 | `invariant: confirm batch mixed archived` | S3 | One stamp/load list spans need-body and already-bodied | Split at the `has_body` change (IBD lookup) or call one-shot twice. Do not hitchhike `get_list` on `plan=Some` |
-| `put_full_batch fk mismatch` | S4 cascade | Tip-ahead plan after tip+1 reject | Soft requeue for fk mismatch / connect height not tip+1 |
+| `put_full_batch fk mismatch` | S4 cascade | Tip-ahead plan after tip+1 reject. Planned fks that are not one ascending run get it before the append | Soft requeue for fk mismatch / connect height not tip+1 |
 | `parent create_fk unresolved` | S2 | Skeleton / in-flight miss | **Engine fault** on a lone block. Requeue once, then halt IBD. Do not blacklist. Exception: a lone tip+1 block that a fresh TipOnly read still misses once `tx.head` holds every connected create is `ConsensusInvalid` (`missing prevout: parent … is not on the connected chain`, [089](./external_findings/089-missing-parent-verdict.md)). |
 | Lookup 8 consecutive non-session `Io` | live | Read-side store IO | **EngineFault** reject: `apply_engine_fault_reject` **dequeues** that height's body-queue payload and requeues the hash once; a second occurrence on the same hash **halts** IBD. Session-fault recover does **not** dequeue. Do not emit a reject when the feed has no ready hash. |
 | false PrevoutSpent | identity | schema-13 zero pin id | plan reverse map / lookup `txid.body` only |
