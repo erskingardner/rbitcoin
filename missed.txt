@@ -1031,3 +1031,35 @@ MISSED   crates/rbitcoin-net/src/peer.rs:4581:62: replace & with ^ in serve_getd
 MISSED   crates/rbitcoin-net/src/peer.rs:5237:58: replace && with || in evict_pending_for_room in 7s build + 45s test
 MISSED   crates/rbitcoin-net/src/peer.rs:5237:31: delete ! in evict_pending_for_room in 6s build + 45s test
 MISSED   crates/rbitcoin-net/src/peer.rs:5288:12: delete ! in drop_hashes_until_fit in 6s build + 46s test
+# 43385431623 1 74c7b8a63b1c8e90440b4851e07bba592f0cec59
+MISSED   crates/rbitcoin-net/src/peer.rs:5341:12: delete ! in pending_path_fails_claimed_pow in 102s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5345:33: replace == with != in pending_path_fails_claimed_pow in 6s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5366:17: replace && with || in disconnected_pending in 6s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5365:20: replace != with == in disconnected_pending in 6s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5371:50: replace && with || in disconnected_pending in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5371:24: delete ! in disconnected_pending in 6s build + 60s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5371:53: delete ! in disconnected_pending in 6s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5468:46: replace && with || in retarget_stored_header_asks in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5544:57: replace >= with < in pending_root in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5622:23: replace && with || in classify_headers in 6s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5622:62: replace > with >= in classify_headers in 7s build + 60s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5633:52: replace > with < in classify_headers in 7s build + 60s test
+MISSED   crates/rbitcoin-net/src/peer.rs:6226:32: delete ! in on_cmpctblock in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:6229:9: replace && with || in on_cmpctblock in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:6228:9: replace && with || in on_cmpctblock in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:6231:55: replace > with == in on_cmpctblock in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:6231:55: replace > with < in on_cmpctblock in 7s build + 60s test
+MISSED   crates/rbitcoin-net/src/peer.rs:6231:55: replace > with >= in on_cmpctblock in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:6237:21: replace && with || in on_cmpctblock in 7s build + 58s test
+MISSED   crates/rbitcoin-net/src/peer.rs:6433:40: replace match guard !net_error_is_store_not_found(&e) with true in on_cmpct_got_block in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:6846:44: replace && with || in on_tx in 7s build + 60s test
+MISSED   crates/rbitcoin-net/src/peers.rs:66:9: replace + with - in compact_block_len in 105s build + 60s test
+MISSED   crates/rbitcoin-net/src/peers.rs:601:9: replace LivePeer::raw_sent -> u64 with 0 in 7s build + 60s test
+MISSED   crates/rbitcoin-net/src/peers.rs:1367:9: replace LivePeer::note_last_block with () in 7s build + 60s test
+MISSED   crates/rbitcoin-net/src/peers.rs:1583:27: replace && with || in LivePeer::block_download_owns in 6s build + 59s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2318:41: replace != with == in PeerHub::set_tor_wallet_onion in 4s build + 37s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2550:9: replace PeerHub::addrfetch_learned -> &Notify with Box::leak(Box::new(Default::default())) in 4s build + 38s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2556:9: replace PeerHub::note_dial_parked with () in 4s build + 40s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2562:9: replace PeerHub::dial_parked -> &Notify with Box::leak(Box::new(Default::default())) in 4s build + 38s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2729:9: replace PeerHub::outbound_attempts -> u64 with 0 in 4s build + 38s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2729:9: replace PeerHub::outbound_attempts -> u64 with 1 in 4s build + 39s test
