@@ -3294,6 +3294,25 @@ pub fn spawn_confirm_engine(
                         }
                         Ok(wave) => {
                             lookup_faults.on_success();
+                            // bench only: how many creates the pipeline holds
+                            // above this wave's drain+fence snapshot.
+                            if let (Some(lo), Some(hi)) =
+                                (wave.items.first(), wave.items.last())
+                            {
+                                let wave_txids: usize = wave
+                                    .items
+                                    .iter()
+                                    .map(|(_, _, w)| w.block.txdata.len())
+                                    .sum();
+                                debug!(
+                                    "ibd: undrained lo={} hi={} snap={} wave_txids={} set_bytes={}",
+                                    lo.0,
+                                    hi.0,
+                                    wave.drain_fence_hi.map_or(-1, i64::from),
+                                    wave_txids,
+                                    undrained.approx_bytes(),
+                                );
+                            }
                             did = true;
                             if let Some((h, hash)) = wave.undecodable {
                                 warn!("ibd: body queue wire @{h} does not decode; dropped");
