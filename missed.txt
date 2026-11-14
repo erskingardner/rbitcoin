@@ -1063,3 +1063,19 @@ MISSED   crates/rbitcoin-net/src/peers.rs:2556:9: replace PeerHub::note_dial_par
 MISSED   crates/rbitcoin-net/src/peers.rs:2562:9: replace PeerHub::dial_parked -> &Notify with Box::leak(Box::new(Default::default())) in 4s build + 38s test
 MISSED   crates/rbitcoin-net/src/peers.rs:2729:9: replace PeerHub::outbound_attempts -> u64 with 0 in 4s build + 38s test
 MISSED   crates/rbitcoin-net/src/peers.rs:2729:9: replace PeerHub::outbound_attempts -> u64 with 1 in 4s build + 39s test
+# 43569403481 1 74c7b8a63b1c8e90440b4851e07bba592f0cec59
+MISSED   crates/rbitcoin-net/src/peers.rs:2867:46: replace || with && in PeerHub::try_start_headers_sync in 7s build + 52s test
+MISSED   crates/rbitcoin-net/src/peers.rs:4217:29: replace == with != in PeerHub::full_outbound_count in 7s build + 52s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:57:5: replace on_off_pool_thread -> bool with false in 81s build + 52s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:215:9: replace <impl Drop for StorePermitGuard>::drop with () in 9s build + 52s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:294:9: replace off_pool_lane::off_pool_threads -> usize with 0 in 6s build + 52s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:294:9: replace off_pool_lane::off_pool_threads -> usize with 1 in 5s build + 52s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:300:28: replace == with != in off_pool_lane::off_pool_threads in 6s build + 52s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:301:19: replace += with -= in off_pool_lane::off_pool_threads in 5s build + 52s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:301:19: replace += with *= in off_pool_lane::off_pool_threads in 5s build + 52s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:220:5: replace lane_test_gate_enabled -> bool with true in 81s build + 52s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:264:58: replace == with != in take_lane_exemption in 8s build + 52s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:280:22: delete ! in lane_send_guard in 8s build + 52s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:322:5: replace lane_exclusive_notify -> &'static tokio::sync::Notify with Box::leak(Box::new(Default::default())) in 7s build + 52s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:423:11: delete ! in hold_lane_mutex_for_tests in 7s build + 52s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:556:10: replace == with != in release_lane_hold in 6s build + 52s test
