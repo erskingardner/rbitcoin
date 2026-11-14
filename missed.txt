@@ -1079,3 +1079,21 @@ MISSED   crates/rbitcoin-net/src/tip_accept.rs:280:22: delete ! in lane_send_gua
 MISSED   crates/rbitcoin-net/src/tip_accept.rs:322:5: replace lane_exclusive_notify -> &'static tokio::sync::Notify with Box::leak(Box::new(Default::default())) in 7s build + 52s test
 MISSED   crates/rbitcoin-net/src/tip_accept.rs:423:11: delete ! in hold_lane_mutex_for_tests in 7s build + 52s test
 MISSED   crates/rbitcoin-net/src/tip_accept.rs:556:10: replace == with != in release_lane_hold in 6s build + 52s test
+# 43569403481 2 74c7b8a63b1c8e90440b4851e07bba592f0cec59
+MISSED   crates/rbitcoin-net/src/netaddr.rs:504:13: delete match arm b'A'..= b'Z' in decode_i2p_name in 105s build + 60s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:504:30: replace - with + in decode_i2p_name in 6s build + 59s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:504:30: replace - with / in decode_i2p_name in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:508:26: replace | with ^ in decode_i2p_name in 7s build + 60s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:528:16: replace < with <= in strip_onion_suffix in 6s build + 60s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:580:26: replace | with ^ in b32_encode in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:599:13: delete match arm b'A'..= b'Z' in b32_decode in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:599:30: replace - with + in b32_decode in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:599:30: replace - with / in b32_decode in 6s build + 59s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:603:26: replace | with ^ in b32_decode in 7s build + 60s test
+MISSED   crates/rbitcoin-net/src/netaddr.rs:614:16: replace || with && in b32_decode in 7s build + 59s test
+MISSED   crates/rbitcoin-net/src/netgroup.rs:43:17: replace || with && in select_diverse in 106s build + 61s test
+MISSED   crates/rbitcoin-net/src/netgroup.rs:59:21: replace < with <= in select_diverse in 6s build + 58s test
+MISSED   crates/rbitcoin-net/src/netgroup.rs:78:36: replace | with ^ in prefix_group in 6s build + 59s test
+MISSED   crates/rbitcoin-net/src/peer.rs:637:81: replace + with - in 4s build + 38s test
+MISSED   crates/rbitcoin-net/src/peer.rs:637:81: replace + with * in 4s build + 38s test
+MISSED   crates/rbitcoin-net/src/peer.rs:637:59: replace + with * in 4s build + 38s test
