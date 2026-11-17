@@ -1222,3 +1222,34 @@ MISSED   crates/rbitcoin-net/src/peer.rs:3449:39: delete ! in tx_inv_candidate_o
 MISSED   crates/rbitcoin-net/src/peer.rs:3478:73: replace > with == in queue_due_tx_invs in 4s build + 24s test
 MISSED   crates/rbitcoin-net/src/peer.rs:3479:22: delete ! in queue_due_tx_invs in 4s build + 23s test
 MISSED   crates/rbitcoin-net/src/peer.rs:3479:34: delete ! in queue_due_tx_invs in 4s build + 23s test
+# 44047680288 1 94337954f5f6d1119993e8a507bbb09644137471
+MISSED   crates/rbitcoin-net/src/peers.rs:2964:46: replace || with && in PeerHub::try_start_headers_sync in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peers.rs:4315:29: replace == with != in PeerHub::full_outbound_count in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:57:5: replace on_off_pool_thread -> bool with false in 75s build + 43s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:215:9: replace <impl Drop for StorePermitGuard>::drop with () in 8s build + 43s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:294:9: replace off_pool_lane::off_pool_threads -> usize with 1 in 5s build + 44s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:300:28: replace == with != in off_pool_lane::off_pool_threads in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:301:19: replace += with -= in off_pool_lane::off_pool_threads in 4s build + 43s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:301:19: replace += with *= in off_pool_lane::off_pool_threads in 4s build + 43s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:220:5: replace lane_test_gate_enabled -> bool with true in 74s build + 43s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:264:58: replace == with != in take_lane_exemption in 7s build + 43s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:280:22: delete ! in lane_send_guard in 6s build + 44s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:322:5: replace lane_exclusive_notify -> &'static tokio::sync::Notify with Box::leak(Box::new(Default::default())) in 6s build + 43s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:423:11: delete ! in hold_lane_mutex_for_tests in 6s build + 43s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:556:10: replace == with != in release_lane_hold in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:3504:15: replace += with *= in queue_due_tx_invs in 76s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:3520:16: delete ! in queue_due_tx_invs in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:3532:15: replace += with -= in queue_due_tx_invs in 5s build + 44s test
+MISSED   crates/rbitcoin-net/src/peer.rs:3532:15: replace += with *= in queue_due_tx_invs in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:3539:10: replace > with == in queue_due_tx_invs in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:3946:9: delete match arm NetworkMessage::Version(_) in handle_peer_control_msg in 5s build + 44s test
+MISSED   crates/rbitcoin-net/src/peer.rs:4189:9: delete match arm NetworkMessage::Unknown{..} | NetworkMessage::GetData(_) | NetworkMessage::GetBlockTxn(_) | NetworkMessage::Block(_) | NetworkMessage::CmpctBlock(_) | NetworkMessage::BlockTxn(_) | NetworkMessage::Tx(_) in handle_peer_inventory_msg in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:4326:19: replace > with == in on_addr_list in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:4326:19: replace > with >= in on_addr_list in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:4532:9: replace && with || in getheaders_apply in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:4531:9: replace && with || in getheaders_apply in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:4531:41: replace != with == in getheaders_apply in 5s build + 44s test
+MISSED   crates/rbitcoin-net/src/peer.rs:4632:70: replace && with || in serve_getdata_tail in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5005:9: replace && with || in on_inv in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5099:28: replace || with && in on_inv_block_needs_headers in 5s build + 43s test
+MISSED   crates/rbitcoin-net/src/peer.rs:5653:13: replace || with && in classify_headers in 5s build + 44s test
