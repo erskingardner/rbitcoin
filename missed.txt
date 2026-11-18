@@ -1319,3 +1319,34 @@ MISSED   crates/rbitcoin-net/src/peers.rs:1507:9: replace LivePeer::age_inv_seen
 MISSED   crates/rbitcoin-net/src/peers.rs:1507:9: replace LivePeer::age_inv_seen -> (u64, u64) with (0, 1) in 3s build + 19s test
 MISSED   crates/rbitcoin-net/src/peers.rs:1507:9: replace LivePeer::age_inv_seen -> (u64, u64) with (1, 0) in 3s build + 19s test
 MISSED   crates/rbitcoin-net/src/peers.rs:1507:9: replace LivePeer::age_inv_seen -> (u64, u64) with (1, 1) in 3s build + 19s test
+# 44263089211 1 94337954f5f6d1119993e8a507bbb09644137471
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:426:20: replace & with | in tx_has_bip68_time_lock in 7s build + 49s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:426:20: replace & with ^ in tx_has_bip68_time_lock in 7s build + 50s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:1339:22: replace != with == in <impl Drop for TemplateHold<'_>>::drop in 8s build + 50s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:3284:12: delete ! in MempoolHub::admit_with_waiting_spender in 7s build + 49s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:3754:17: replace && with || in MempoolHub::note_if_accept_failure in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:4273:16: delete ! in MempoolHub::admit_with_waiting_spender_work in 7s build + 49s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5839:9: replace MempoolHub::template_prev_waiters -> usize with 1 in 6s build + 50s test
+MISSED   crates/rbitcoin-net/src/v1.rs:29:34: replace * with + in 81s build + 49s test
+MISSED   crates/rbitcoin-net/src/v1.rs:29:34: replace * with / in 6s build + 48s test
+MISSED   crates/rbitcoin-net/src/v1.rs:147:16: replace > with >= in V1Reader<R>::check_head in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/v1.rs:172:39: replace < with == in V1Writer<W>::write_contents in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/v1.rs:172:39: replace < with > in V1Writer<W>::write_contents in 7s build + 49s test
+MISSED   crates/rbitcoin-net/src/v1.rs:172:39: replace < with <= in V1Writer<W>::write_contents in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:1814:9: replace | with ^ in rand_ping_nonce in 6s build + 50s test
+MISSED   crates/rbitcoin-net/src/peers.rs:1821:12: replace == with != in acct_bytes in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2116:17: replace >> with << in mix64 in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2117:12: replace ^ with | in mix64 in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2117:12: replace ^ with & in mix64 in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2118:7: replace ^ with | in mix64 in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2118:7: replace ^ with & in mix64 in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2118:12: replace >> with << in mix64 in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2125:7: replace ^= with &= in addr_sample_seed in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2136:15: replace ^= with |= in addr_sample_seed in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2136:15: replace ^= with &= in addr_sample_seed in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2137:15: replace ^= with |= in addr_sample_seed in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2137:15: replace ^= with &= in addr_sample_seed in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2489:9: replace PeerHub::is_pruned -> bool with false in 12s build + 50s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2741:41: replace * with + in PeerHub::addr_response_net in 4s build + 24s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2741:41: replace * with / in PeerHub::addr_response_net in 4s build + 24s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2741:36: replace * with + in PeerHub::addr_response_net in 4s build + 24s test
