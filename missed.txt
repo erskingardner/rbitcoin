@@ -1350,3 +1350,50 @@ MISSED   crates/rbitcoin-net/src/peers.rs:2489:9: replace PeerHub::is_pruned -> 
 MISSED   crates/rbitcoin-net/src/peers.rs:2741:41: replace * with + in PeerHub::addr_response_net in 4s build + 24s test
 MISSED   crates/rbitcoin-net/src/peers.rs:2741:41: replace * with / in PeerHub::addr_response_net in 4s build + 24s test
 MISSED   crates/rbitcoin-net/src/peers.rs:2741:36: replace * with + in PeerHub::addr_response_net in 4s build + 24s test
+# 44263089211 2 94337954f5f6d1119993e8a507bbb09644137471
+MISSED   crates/rbitcoin-net/src/peers.rs:2786:43: replace + with * in PeerHub::addr_response_net in 81s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2916:26: delete ! in PeerHub::release_cmpct_fill in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2936:9: replace PeerHub::is_relay_perm -> bool with false in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2970:62: replace < with <= in PeerHub::try_start_headers_sync in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:2970:67: replace * with + in PeerHub::try_start_headers_sync in 7s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:3062:42: replace * with + in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:3062:42: replace * with / in 7s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:3107:20: replace < with <= in PeerHub::note_rate_strike in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:3169:9: replace PeerHub::request_all_tx_inv with () in 7s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:3227:9: replace PeerHub::queue_pings with () in 7s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:3551:56: replace || with && in PeerHub::queue_feefilter_all in 6s build + 50s test
+MISSED   crates/rbitcoin-net/src/peers.rs:3803:37: replace == with != in PeerHub::socket_still_current in 8s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:3895:30: replace && with || in PeerHub::note_default_port in 7s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:4193:25: replace < with <= in PeerHub::maybe_select_hb in 9s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:4325:9: replace PeerHub::live_outbound_full_relay_addrs -> Vec<SocketAddr> with vec![] in 83s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:4336:72: replace && with || in PeerHub::live_outbound_full_relay_nets in 7s build + 50s test
+MISSED   crates/rbitcoin-net/src/peers.rs:4497:55: replace && with || in ensure_host_port in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/peers.rs:4497:29: replace && with || in ensure_host_port in 6s build + 50s test
+MISSED   crates/rbitcoin-net/src/peers.rs:4502:24: replace || with && in ensure_host_port in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/reactor.rs:36:9: replace <impl Drop for BlockingRegion>::drop with () in 83s build + 50s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:30:66: replace * with + in 81s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:43:51: replace | with ^ in required_seed_services in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:43:27: replace | with ^ in required_seed_services in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:206:16: delete ! in resolve_dns_seeds in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:238:37: replace << with >> in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:247:46: replace / with * in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:251:45: replace / with % in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:300:9: replace PeerFlags::is_untried -> bool with true in 6s build + 50s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:319:55: replace && with || in PeerFlags::apply_speed_sample in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:319:31: replace < with <= in PeerFlags::apply_speed_sample in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:319:72: replace > with >= in PeerFlags::apply_speed_sample in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:320:55: replace || with && in PeerFlags::apply_speed_sample in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:320:31: replace > with == in PeerFlags::apply_speed_sample in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:320:31: replace > with >= in PeerFlags::apply_speed_sample in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:320:72: replace < with == in PeerFlags::apply_speed_sample in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:392:9: replace AddrMan::asmap -> Option<&AsMap> with None in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:626:17: replace |= with &= in AddrMan::remember in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:647:45: replace || with && in AddrMan::add_learned_addr in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:808:42: replace && with || in AddrMan::is_dialable in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:900:21: replace || with && in AddrMan::take_dial_candidates in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:946:28: replace - with + in AddrMan::take_dial_candidates in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:964:34: replace || with && in AddrMan::take_outbound_offset_occupied in 80s build + 50s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:975:42: replace % with / in AddrMan::take_outbound_offset_occupied in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:975:37: replace + with * in AddrMan::take_outbound_offset_occupied in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:1066:23: replace && with || in AddrMan::load in 6s build + 49s test
+MISSED   crates/rbitcoin-net/src/seeds.rs:1066:12: delete ! in AddrMan::load in 6s build + 49s test

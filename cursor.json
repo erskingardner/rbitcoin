@@ -1,14 +1,14 @@
 {
   "new_base": "8e62e4ce4d60c30abc851cb0893e4b80149ac9e4",
   "new_skip": 4202,
-  "old_index": 10912,
+  "old_index": 11416,
   "new_cap_used": true,
   "run_id": "44263089211",
-  "old_name": "crates/rbitcoin-net/src/peers.rs:2786:43: replace + with * in PeerHub::addr_response_net",
+  "old_name": "crates/rbitcoin-net/src/serve_perf.rs:38:5: replace sample_reset_serve_perf -> ServePerfSample with Default::default()",
   "new_len": 9108,
   "new_remaining": 4906,
-  "completed_new": 384,
-  "completed_old": 221,
+  "completed_new": 0,
+  "completed_old": 504,
   "old_len": 27755,
-  "old_remaining": 27534
+  "old_remaining": 27251
 }
