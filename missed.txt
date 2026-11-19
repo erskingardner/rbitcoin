@@ -1498,3 +1498,50 @@ MISSED   crates/rbitcoin-net/src/socks.rs:386:48: replace > with == in write_con
 MISSED   crates/rbitcoin-net/src/socks.rs:386:48: replace > with >= in write_connect in 6s build + 45s test
 MISSED   crates/rbitcoin-net/src/socks.rs:413:9: delete match arm 4 in read_connect_reply in 6s build + 45s test
 MISSED   crates/rbitcoin-net/src/socks.rs:417:9: delete match arm 3 in read_connect_reply in 7s build + 47s test
+# 44483839525 2 94337954f5f6d1119993e8a507bbb09644137471
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:704:47: replace || with && in wait_park_gate in 112s build + 56s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:709:43: replace || with && in wait_park_gate in 8s build + 56s test
+MISSED   crates/rbitcoin-net/src/tip_accept.rs:714:50: delete ! in wait_park_gate in 8s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:144:9: replace <impl Drop for PromoteDepth>::drop with () in 110s build + 57s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:151:5: replace reset_promote_depth with () in 12s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:158:5: replace promote_depth_max -> u32 with 1 in 12s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:470:13: delete match arm 1 in QueryUtxoProvider<'a>::coinbase_flag in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:471:13: delete match arm 2 in QueryUtxoProvider<'a>::coinbase_flag in 8s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:655:45: replace || with && in is_hard_recent_reject in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:1802:14: replace > with == in MempoolHub::note_getdata_tx in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:1880:23: replace > with == in MempoolHub::push_recent in 8s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:1880:23: replace > with >= in MempoolHub::push_recent in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:1894:9: replace MempoolHub::compact -> Result<(u32, usize), String> with Ok((0, 0)) in 11s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:1894:9: replace MempoolHub::compact -> Result<(u32, usize), String> with Ok((0, 1)) in 8s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:1894:9: replace MempoolHub::compact -> Result<(u32, usize), String> with Ok((1, 0)) in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:1894:9: replace MempoolHub::compact -> Result<(u32, usize), String> with Ok((1, 1)) in 7s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2007:9: replace MempoolHub::immediate_relay -> bool with true in 11s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2007:9: replace MempoolHub::immediate_relay -> bool with false in 7s build + 54s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2021:9: replace MempoolHub::expiry_hours -> u64 with 0 in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2021:9: replace MempoolHub::expiry_hours -> u64 with 1 in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2021:50: replace / with % in MempoolHub::expiry_hours in 8s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2021:50: replace / with * in MempoolHub::expiry_hours in 7s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2046:21: replace || with && in MempoolHub::expire_stale_inner in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2111:14: replace > with == in MempoolHub::remove_expired_roots in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2134:9: replace MempoolHub::notify_inv_flush with () in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2163:9: replace MempoolHub::list_live_wtxids -> Vec<(Txid, Wtxid)> with vec![] in 110s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2337:50: delete ! in MempoolHub::chain_create_fks in 11s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2368:21: replace || with && in MempoolHub::chain_create_fks in 7s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2368:52: replace && with || in MempoolHub::chain_create_fks in 7s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2368:55: delete ! in MempoolHub::chain_create_fks in 8s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2453:9: replace MempoolHub::generation -> u64 with 0 in 8s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2453:9: replace MempoolHub::generation -> u64 with 1 in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2464:9: replace MempoolHub::persist_due -> Result<(), String> with Ok(()) in 11s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:2639:40: replace && with || in MempoolHub::chain_tip_ctx in 11s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:4991:20: delete ! in MempoolHub::note_accept_failure in 7s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5132:22: replace / with % in MempoolHub::index_accepted_package in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5132:22: replace / with * in MempoolHub::index_accepted_package in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5233:20: replace > with == in MempoolHub::commit_generated_txids in 8s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5358:11: replace + with * in MempoolHub::remove_for_block_spent in 7s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5368:9: replace MempoolHub::orphan_stats -> (usize, u64) with (0, 0) in 9s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5368:9: replace MempoolHub::orphan_stats -> (usize, u64) with (0, 1) in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5408:46: replace && with || in MempoolHub::orphan_write in 9s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5408:49: delete ! in MempoolHub::orphan_write in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:5481:25: delete ! in MempoolHub::schedule_orphan_parents in 112s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:6032:34: replace == with != in MempoolHub::try_cmpct_avail in 8s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:6060:47: replace && with || in MempoolHub::try_cmpct_avail in 7s build + 55s test
