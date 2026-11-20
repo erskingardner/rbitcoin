@@ -1,14 +1,14 @@
 {
   "new_base": "8e62e4ce4d60c30abc851cb0893e4b80149ac9e4",
-  "new_skip": 4711,
-  "old_index": 12178,
+  "new_skip": 5095,
+  "old_index": 12405,
   "new_cap_used": true,
-  "run_id": "44483839525",
-  "old_name": "crates/rbitcoin-net/src/tx_relay.rs:6207:9: replace MempoolHub::descendant_txids -> Option<Vec<Txid>> with Some(vec![])",
+  "run_id": "44697710033",
+  "old_name": "crates/rbitcoin-net/src/v2.rs:370:30: replace == with != in V2SessionReader<R>::read_packet",
   "new_len": 9108,
-  "new_remaining": 4397,
-  "completed_new": 0,
-  "completed_old": 614,
+  "new_remaining": 4013,
+  "completed_new": 384,
+  "completed_old": 227,
   "old_len": 27755,
-  "old_remaining": 27141
+  "old_remaining": 27528
 }

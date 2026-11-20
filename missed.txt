@@ -1545,3 +1545,69 @@ MISSED   crates/rbitcoin-net/src/tx_relay.rs:5408:49: delete ! in MempoolHub::or
 MISSED   crates/rbitcoin-net/src/tx_relay.rs:5481:25: delete ! in MempoolHub::schedule_orphan_parents in 112s build + 55s test
 MISSED   crates/rbitcoin-net/src/tx_relay.rs:6032:34: replace == with != in MempoolHub::try_cmpct_avail in 8s build + 55s test
 MISSED   crates/rbitcoin-net/src/tx_relay.rs:6060:47: replace && with || in MempoolHub::try_cmpct_avail in 7s build + 55s test
+# 44697710033 1 94337954f5f6d1119993e8a507bbb09644137471
+MISSED   crates/rbitcoin-node/src/tor_control.rs:410:60: replace + with - in keep in 2s build + 16s test
+MISSED   crates/rbitcoin-node/src/tor_control.rs:546:14: replace > with >= in read_reply_or_refusal in 2s build + 16s test
+MISSED   crates/rbitcoin-node/src/tor_control.rs:553:17: replace > with >= in read_reply_or_refusal in 2s build + 16s test
+MISSED   crates/rbitcoin-primitives/src/median_time.rs:18:24: replace < with > in MedianWindow<'a>::at_least_eleven in 12s build + 101s test
+MISSED   crates/rbitcoin-query/src/lib.rs:102:5: replace take_spill_reads -> u32 with 1 in 120s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:650:13: delete match arm Some(Some(hash)) in MilestonePath::links_work_tip in 13s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:669:28: replace && with || in MilestonePath::bind_work_hash in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:669:48: replace == with != in MilestonePath::bind_work_hash in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:712:19: replace += with *= in MilestonePath::note_below in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:732:16: replace < with <= in MilestonePath::clear_above in 10s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:771:27: replace -= with += in MilestonePath::forget_range in 10s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:771:27: replace -= with /= in MilestonePath::forget_range in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:778:9: replace MilestonePath::compact with () in 16s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:779:28: replace || with && in MilestonePath::compact in 14s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:779:23: replace == with != in MilestonePath::compact in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:779:42: replace < with == in MilestonePath::compact in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:779:42: replace < with > in MilestonePath::compact in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:779:42: replace < with <= in MilestonePath::compact in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:785:34: replace > with == in MilestonePath::compact in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:785:34: replace > with < in MilestonePath::compact in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:785:34: replace > with >= in MilestonePath::compact in 9s build + 86s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1013:9: replace Query::require_pruned_keep_spills -> Result<(), QueryError> with Ok(()) in 11s build + 85s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1020:17: replace > with == in Query::require_pruned_keep_spills in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1020:17: replace > with < in Query::require_pruned_keep_spills in 9s build + 85s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1020:17: replace > with >= in Query::require_pruned_keep_spills in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1070:17: replace > with == in Query::sync_keep_window_files in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1070:17: replace > with >= in Query::sync_keep_window_files in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1436:16: delete ! in Query::persist_pruneheight_clear in 14s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1466:53: replace < with <= in Query::prune_seqsigwit_below in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1652:32: replace == with != in Query::read_spill_bytes in 14s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1664:29: replace || with && in Query::read_spill_rows in 15s build + 82s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1664:75: replace <= with > in Query::read_spill_rows in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1678:49: replace && with || in Query::read_spill_rows in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1841:16: delete ! in Query::note_seqsigwit_ram_for_confirmed in 119s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:1895:56: replace > with >= in Query::inputs_for_seal in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:2348:49: replace | with ^ in Query::set_lookup_taken_hi in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:2549:59: replace <= with > in Query::block_queue_dequeue_above in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3134:9: replace Query::detach_confirm_write with () in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3581:5: replace take_keep_reads -> u64 with 1 in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3594:34: replace * with + in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3594:34: replace * with / in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3594:27: replace * with + in fmt_byte_size in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3594:27: replace * with / in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3595:27: replace * with + in fmt_byte_size in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3595:27: replace * with / in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3596:10: replace >= with < in fmt_byte_size in 10s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3597:23: replace / with % in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3598:35: replace / with % in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3598:35: replace / with * in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3598:30: replace * with + in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3598:30: replace * with / in fmt_byte_size in 10s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3598:23: replace % with / in fmt_byte_size in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3598:23: replace % with + in fmt_byte_size in 9s build + 86s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3600:17: replace >= with < in fmt_byte_size in 9s build + 85s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3601:23: replace / with % in fmt_byte_size in 9s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3601:23: replace / with * in fmt_byte_size in 9s build + 85s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3602:35: replace / with % in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3602:35: replace / with * in fmt_byte_size in 10s build + 84s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3602:30: replace * with + in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3602:30: replace * with / in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3602:23: replace % with / in fmt_byte_size in 9s build + 83s test
+MISSED   crates/rbitcoin-query/src/lib.rs:3602:23: replace % with + in fmt_byte_size in 10s build + 83s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:6230:40: replace && with || in MempoolHub::package_would_exceed_cluster in 109s build + 56s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:7110:25: replace > with == in MempoolHub::push_confirm_memory in 7s build + 55s test
+MISSED   crates/rbitcoin-net/src/tx_relay.rs:7110:25: replace > with >= in MempoolHub::push_confirm_memory in 7s build + 55s test
