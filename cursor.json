@@ -1,14 +1,14 @@
 {
   "new_base": "8e62e4ce4d60c30abc851cb0893e4b80149ac9e4",
-  "new_skip": 5368,
-  "old_index": 14317,
+  "new_skip": 5673,
+  "old_index": 14862,
   "new_cap_used": true,
-  "run_id": "44881651623",
-  "old_name": "crates/rbitcoin-query/src/archive.rs:45:9: replace CreatePinArc::wrap -> CreatePin with Default::default()",
+  "run_id": "44998611553",
+  "old_name": "crates/rbitcoin-query/src/block_filter.rs:516:9: replace Query::index_target -> Option<u32> with Some(0)",
   "new_len": 9108,
-  "new_remaining": 3740,
-  "completed_new": 0,
-  "completed_old": 662,
+  "new_remaining": 3435,
+  "completed_new": 305,
+  "completed_old": 545,
   "old_len": 27755,
-  "old_remaining": 27093
+  "old_remaining": 27210
 }
