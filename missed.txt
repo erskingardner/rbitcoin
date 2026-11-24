@@ -2233,3 +2233,106 @@ MISSED   crates/rbitcoin-query/src/index_writebehind.rs:293:13: replace += with 
 MISSED   crates/rbitcoin-query/src/confirm_run/bq_resolve.rs:299:17: delete ! in confirm_bq_resolve_wave_capped in 94s build + 75s test
 MISSED   crates/rbitcoin-query/src/confirm_run/index.rs:122:12: delete ! in prepare_index_jobs in 2s build + 6s test
 MISSED   crates/rbitcoin-query/src/confirm_run/index.rs:131:33: replace || with && in prepare_index_jobs in 2s build + 6s test
+# 45375070661 1 94337954f5f6d1119993e8a507bbb09644137471
+MISSED   crates/rbitcoin-rpc/src/server.rs:28:39: replace * with + in 71s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:736:68: replace > with >= in read_unread_body in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:800:9: replace <impl HttpBody for TrackedBody>::is_end_stream -> bool with true in 3s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:800:9: replace <impl HttpBody for TrackedBody>::is_end_stream -> bool with false in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:805:9: replace <impl HttpBody for TrackedBody>::size_hint -> SizeHint with Default::default() in 3s build + 17s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:1080:50: replace match guard mode == "template" with false in gbt_request_will_wait in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:1118:30: replace && with || in work_queue_exceeded_reply in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:1118:12: replace == with != in work_queue_exceeded_reply in 3s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:1118:33: delete ! in work_queue_exceeded_reply in 3s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:1195:24: delete ! in exec_http_batch_async in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/server.rs:1279:15: delete ! in exec_blocking_method in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/asm.rs:53:42: replace || with && in sighash_suffix in 72s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/chain.rs:1401:35: replace match guard s == BASIC_FILTER_INDEX with true in getindexinfo in 72s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/descriptor.rs:65:42: replace && with || in p2pk_key in 71s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/descriptor.rs:86:50: replace || with && in bare_multisig in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/descriptor.rs:99:28: replace > with >= in multisig_count in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/descriptor.rs:127:44: replace ^ with | in polymod in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:498:13: replace && with || in off_chain_create_height in 68s build + 17s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:499:61: replace + with * in off_chain_create_height in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:728:58: replace - with + in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:728:58: replace - with / in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:737:22: replace > with == in push_mantissa_digit in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:737:22: replace > with >= in push_mantissa_digit in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:787:18: replace > with == in parse_fixed_point_sat in 2s build + 17s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:787:18: replace > with >= in parse_fixed_point_sat in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:787:38: replace / with % in parse_fixed_point_sat in 2s build + 17s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:790:19: replace * with / in parse_fixed_point_sat in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:806:27: replace > with == in parse_fixed_point_sat in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:806:27: replace > with >= in parse_fixed_point_sat in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:988:44: replace != with == in package_tx_fee_exceeds_max in 2s build + 17s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:1065:9: delete match arm Some(Value::Bool(true)) in sendrawtransaction_async in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:1066:9: delete match arm Some(Value::Bool(false)) in sendrawtransaction_async in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:2152:23: replace || with && in submitpackage in 68s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:2152:36: replace > with == in submitpackage in 2s build + 17s test
+MISSED   crates/rbitcoin-rpc/src/methods/mempool.rs:2152:36: replace > with >= in submitpackage in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:38:47: replace == with != in allow_local_miner in 68s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:300:24: replace == with != in generateblock_async in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:891:9: delete match arm [b'+', b'-', ..] in locale_independent_atoi in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:892:9: delete match arm [b'+', rest @..] in locale_independent_atoi in 2s build + 17s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:896:9: delete match arm [b'-', rest @..] in locale_independent_atoi in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:911:21: replace match guard negative with true in locale_independent_atoi in 2s build + 17s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:911:21: replace match guard negative with false in locale_independent_atoi in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:1053:15: delete ! in GbtRenderGate::wait_entered in 2s build + 17s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:1063:38: replace && with || in GbtRenderGate::wait_entered in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:1063:41: delete ! in GbtRenderGate::wait_entered in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:1105:11: delete ! in wait_gbt_render_gate in 2s build + 18s test
+MISSED   crates/rbitcoin-rpc/src/methods/mine.rs:1435:22: replace match guard samples == MININGINFO_SAMPLES with false in getmininginfo in 2s build + 18s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:72:12: delete ! in TipFlushHold::store in 2s build + 4s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:110:9: replace ClassCWrite::for_test -> Self with Default::default() in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:278:21: delete ! in RamSlots::grow in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:308:28: replace * with + in RamSlots::committed_bytes in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:308:28: replace * with / in RamSlots::committed_bytes in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:334:18: replace > with >= in BitReserve::commit_words in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:345:44: replace / with * in BitReserve::words in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:363:5: replace page_size -> usize with 1 in 9s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:369:18: replace <= with > in page_size in 9s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:391:13: delete - in map_reserve in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:407:74: replace | with ^ in commit_prefix in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:416:23: replace || with && in release_reserve in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:428:5: replace map_reserve -> Result<*mut u8, StoreError> with Ok(Default::default()) in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:437:5: replace commit_prefix -> Result<(), StoreError> with Ok(()) in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:437:14: replace == with != in commit_prefix in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:450:5: replace release_reserve with () in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:488:5: replace commit_prefix -> Result<(), StoreError> with Ok(()) in 7s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:558:46: replace != with == in seq_arm in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:558:42: replace & with | in seq_arm in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:558:42: replace & with ^ in seq_arm in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:714:12: delete ! in ArrayTable::peek_slot in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:737:54: replace + with - in ArrayTable::get_pair_sample in 7s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:737:54: replace + with * in ArrayTable::get_pair_sample in 9s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:806:57: replace + with * in ArrayTable::sample_ram in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:885:22: replace < with <= in ArrayTable::write_fd in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:890:20: replace < with == in ArrayTable::write_fd in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:890:20: replace < with <= in ArrayTable::write_fd in 8s build + 67s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:910:66: replace * with + in ArrayTable::append_fd in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:910:59: replace - with + in ArrayTable::append_fd in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:910:59: replace - with / in ArrayTable::append_fd in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:928:35: replace * with + in ArrayTable::pwrite_zeros in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:933:20: replace += with -= in ArrayTable::pwrite_zeros in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:933:20: replace += with *= in ArrayTable::pwrite_zeros in 8s build + 68s test
+MISSED   crates/rbitcoin-store/src/array_table.rs:973:24: replace >= with < in ArrayTable::store_ram in 8s build + 68s test
+MISSED   crates/rbitcoin-query/src/confirm_run/lookup.rs:263:41: replace && with || in spend_needs_external_parent in 10s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/lookup.rs:263:44: delete ! in spend_needs_external_parent in 6s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/lookup.rs:337:13: replace || with && in stamp_parent_pin_archived in 7s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/phases.rs:307:10: replace < with <= in bip34_header_in_write in 7s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/phases.rs:307:32: replace > with >= in bip34_header_in_write in 7s build + 64s test
+MISSED   crates/rbitcoin-query/src/confirm_run/phases.rs:331:36: replace || with && in bip34_ancestor_for_write in 6s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/phases.rs:378:41: replace - with + in structural_run in 7s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/phases.rs:378:41: replace - with / in structural_run in 6s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/pin.rs:332:20: replace == with != in denserels_by_stamped_range in 84s build + 62s test
+MISSED   crates/rbitcoin-query/src/confirm_run/pin.rs:525:30: replace || with && in ensure_spend_abs_layouts in 7s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:47:15: replace > with == in take_script_jobs in 85s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:67:19: replace > with == in outcome_from in 7s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:187:9: replace Inflight::stamp_index with () in 7s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:204:22: replace && with || in Inflight::is_complete in 7s build + 64s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:221:38: replace && with || in Inflight::finish in 7s build + 63s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:250:34: replace && with || in Inflight::finish in 1s build + 4s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:313:30: replace == with != in log_batch_fault in 1s build + 4s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:351:13: replace drive_script_waves_with::<impl Drop for ClearPublisher>::drop with () in 1s build + 4s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:415:20: delete ! in drive_drain_complete in 1s build + 4s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:431:27: replace || with && in drive_try_start in 1s build + 4s test
+MISSED   crates/rbitcoin-query/src/confirm_run/scripts.rs:431:45: replace >= with < in drive_try_start in 1s build + 4s test
