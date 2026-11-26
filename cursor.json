@@ -1,14 +1,14 @@
 {
   "new_base": "8e62e4ce4d60c30abc851cb0893e4b80149ac9e4",
-  "new_skip": 7293,
-  "old_index": 19566,
+  "new_skip": 7605,
+  "old_index": 19841,
   "new_cap_used": true,
-  "run_id": "45583781381",
-  "old_name": "crates/rbitcoin-store/src/block_queue.rs:61:9: replace QueuedBody::charge -> u64 with 0",
+  "run_id": "45787424185",
+  "old_name": "crates/rbitcoin-store/src/chain.rs:17:9: replace ConfirmedTable::create -> Result<Self, StoreError> with Ok(Default::default())",
   "new_len": 9108,
-  "new_remaining": 1815,
-  "completed_new": 0,
-  "completed_old": 740,
+  "new_remaining": 1503,
+  "completed_new": 312,
+  "completed_old": 275,
   "old_len": 27755,
-  "old_remaining": 27015
+  "old_remaining": 27480
 }
