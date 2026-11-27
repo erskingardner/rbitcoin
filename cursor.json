@@ -1,14 +1,14 @@
 {
   "new_base": "8e62e4ce4d60c30abc851cb0893e4b80149ac9e4",
   "new_skip": 7885,
-  "old_index": 20869,
+  "old_index": 21529,
   "new_cap_used": true,
   "run_id": "45971239256",
-  "old_name": "crates/rbitcoin-store/src/hashhead.rs:235:43: replace * with + in MultiList::offset",
+  "old_name": "crates/rbitcoin-store/src/idx_body_pipeline.rs:60:9: replace IdxBodyJob::from_fk -> Option<Self> with None",
   "new_len": 9108,
   "new_remaining": 1223,
-  "completed_new": 280,
-  "completed_old": 121,
+  "completed_new": 0,
+  "completed_old": 660,
   "old_len": 27755,
-  "old_remaining": 27634
+  "old_remaining": 27095
 }
