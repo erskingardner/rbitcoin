@@ -1,14 +1,14 @@
 {
   "new_base": "8e62e4ce4d60c30abc851cb0893e4b80149ac9e4",
-  "new_skip": 7605,
-  "old_index": 20748,
+  "new_skip": 7885,
+  "old_index": 20869,
   "new_cap_used": true,
-  "run_id": "45787424185",
-  "old_name": "crates/rbitcoin-store/src/file.rs:1330:9: replace TableFile::advise_dont_need with ()",
+  "run_id": "45971239256",
+  "old_name": "crates/rbitcoin-store/src/hashhead.rs:235:43: replace * with + in MultiList::offset",
   "new_len": 9108,
-  "new_remaining": 1503,
-  "completed_new": 0,
-  "completed_old": 907,
+  "new_remaining": 1223,
+  "completed_new": 280,
+  "completed_old": 121,
   "old_len": 27755,
-  "old_remaining": 26848
+  "old_remaining": 27634
 }

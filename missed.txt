@@ -2895,3 +2895,92 @@ MISSED   crates/rbitcoin-store/src/file.rs:1197:21: replace += with -= in TableF
 MISSED   crates/rbitcoin-store/src/file.rs:1197:21: replace += with *= in TableFile::zero_range in 2s build + 3s test
 MISSED   crates/rbitcoin-store/src/file.rs:1303:16: replace > with < in TableFile::with_bytes in 2s build + 3s test
 MISSED   crates/rbitcoin-store/src/file.rs:1320:15: replace != with == in TableFile::advise_access in 2s build + 4s test
+# 45971239256 1 94337954f5f6d1119993e8a507bbb09644137471
+MISSED   crates/rbitcoin-store/src/index_build_uring.rs:620:26: replace match guard want_txids with true in read_witnesses_and_parent_locs in 119s build + 92s test
+MISSED   crates/rbitcoin-store/src/input.rs:157:55: replace * with + in Input::open in 116s build + 92s test
+MISSED   crates/rbitcoin-store/src/input.rs:157:55: replace * with / in Input::open in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/input.rs:158:41: replace > with == in Input::open in 10s build + 93s test
+MISSED   crates/rbitcoin-store/src/input.rs:158:41: replace > with < in Input::open in 10s build + 92s test
+MISSED   crates/rbitcoin-store/src/input.rs:158:41: replace > with >= in Input::open in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/input.rs:357:21: replace < with <= in Input::shrink_body_to in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:254:18: replace > with < in Store::clamp_to_tip_seal in 115s build + 92s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:257:18: replace < with > in Store::clamp_to_tip_seal in 10s build + 93s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:710:25: replace match guard self.strong_past_covered(covered)? with true in Store::drop_confirmed_past_creates in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:697:34: replace > with >= in Store::drop_confirmed_past_creates in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:698:37: replace && with || in Store::drop_confirmed_past_creates in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:776:16: replace > with < in Store::class_a_confirmed_cut in 10s build + 93s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:779:17: replace < with <= in Store::class_a_confirmed_cut in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:792:19: replace || with && in Store::header_tx_end in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:804:38: replace / with % in Store::first_height_past_creates in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:813:26: replace - with + in Store::first_height_past_creates in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:813:26: replace - with / in Store::first_height_past_creates in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:831:38: replace / with % in Store::highest_height_with_tx_range in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:834:24: replace == with != in Store::highest_height_with_tx_range in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:843:19: replace > with == in Store::highest_height_with_tx_range in 12s build + 92s test
+MISSED   crates/rbitcoin-store/src/integrity.rs:843:19: replace > with >= in Store::highest_height_with_tx_range in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_backend.rs:64:5: replace global_read_from_env -> Option<ReadIoBackend> with None in 117s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_backend.rs:74:5: replace global_write_from_env -> Option<WriteIoBackend> with None in 17s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:100:22: replace > with >= in IoHandle::pwrite in 114s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:102:18: replace < with == in IoHandle::pwrite in 10s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:102:18: replace < with <= in IoHandle::pwrite in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:164:5: replace disk_full_errno -> i32 with 0 in 10s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:164:5: replace disk_full_errno -> i32 with 1 in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:182:33: replace != with == in arm_fallocate_limit in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:206:63: replace == with != in injected_fallocate_fault in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:206:79: replace > with == in injected_fallocate_fault in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:207:20: replace -= with += in injected_fallocate_fault in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:207:20: replace -= with /= in injected_fallocate_fault in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:215:51: replace > with >= in injected_fallocate_fault in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:269:29: replace != with == in disarm_pwrite in 10s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:281:29: replace != with == in disarm_pwrite in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:285:29: replace != with == in disarm_pwrite in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:296:59: replace == with != in arm_fail_sync in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:317:5: replace disarm_fail_pread_len with () in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:329:19: replace || with && in take_fail_pread_len in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:332:27: replace - with + in take_fail_pread_len in 11s build + 94s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:332:27: replace - with / in take_fail_pread_len in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:342:59: replace == with != in arm_fail_preads in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:356:5: replace arm_hide_after_pread with () in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:364:5: replace disarm_hide_after_pread with () in 10s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:371:5: replace note_test_pread with () in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:377:5: replace hidden_after_pread -> bool with false in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:393:29: replace != with == in disarm_sync in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:407:16: replace -= with += in take_fail_sync in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:407:16: replace -= with /= in take_fail_sync in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:408:19: replace == with != in take_fail_sync in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:424:16: replace -= with += in take_fail_pread in 10s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:424:16: replace -= with /= in take_fail_pread in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:425:19: replace == with != in take_fail_pread in 10s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:456:16: replace -= with += in take_fail_hwm in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:456:16: replace -= with /= in take_fail_hwm in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:466:13: replace && with || in would_short_pwrite in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/io_handle.rs:466:9: replace > with >= in would_short_pwrite in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1330:16: replace == with != in TableFile::advise_dont_need in 116s build + 92s test
+MISSED   crates/rbitcoin-store/src/file.rs:1347:19: replace != with == in TableFile::advise_dont_need in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1369:5: replace ensure_nofile_budget -> (u64, u64) with (0, 1) in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1369:5: replace ensure_nofile_budget -> (u64, u64) with (1, 0) in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1369:5: replace ensure_nofile_budget -> (u64, u64) with (1, 1) in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1389:44: replace || with && in ensure_nofile_budget_at_least in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1389:32: replace == with != in ensure_nofile_budget_at_least in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1395:19: replace > with == in ensure_nofile_budget_at_least in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1395:19: replace > with < in ensure_nofile_budget_at_least in 12s build + 94s test
+MISSED   crates/rbitcoin-store/src/file.rs:1395:19: replace > with >= in ensure_nofile_budget_at_least in 12s build + 92s test
+MISSED   crates/rbitcoin-store/src/file.rs:1398:71: replace != with == in ensure_nofile_budget_at_least in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1408:17: replace < with == in ensure_nofile_budget_at_least in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1408:17: replace < with > in ensure_nofile_budget_at_least in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1408:17: replace < with <= in ensure_nofile_budget_at_least in 10s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1493:33: replace | with ^ in try_punch_hole in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/file.rs:1496:15: replace == with != in try_punch_hole in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:68:9: replace SealedFuse8::fingerprint_bytes -> usize with 1 in 123s build + 93s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:73:9: replace SealedFuse8::fingerprint_heap_bytes -> usize with 0 in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:120:24: replace < with > in open_file in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:166:15: replace > with == in parse_v2_geometry in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:166:15: replace > with >= in parse_v2_geometry in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:166:28: replace * with + in parse_v2_geometry in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:166:21: replace * with + in parse_v2_geometry in 11s build + 92s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:169:22: replace < with > in parse_v2_geometry in 12s build + 94s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:172:28: replace || with && in parse_v2_geometry in 12s build + 92s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:187:65: replace * with + in parse_v2_geometry in 11s build + 93s test
+MISSED   crates/rbitcoin-store/src/fuse8_filter.rs:187:65: replace * with / in parse_v2_geometry in 12s build + 93s test
+MISSED   crates/rbitcoin-store/src/hashhead.rs:67:17: replace | with ^ in pack_multi in 3s build + 7s test
+MISSED   crates/rbitcoin-store/src/hashhead.rs:229:36: replace / with * in MultiList::open in 3s build + 7s test
