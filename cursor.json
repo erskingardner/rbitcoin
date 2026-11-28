@@ -1,14 +1,14 @@
 {
   "new_base": "8e62e4ce4d60c30abc851cb0893e4b80149ac9e4",
-  "new_skip": 7885,
-  "old_index": 21529,
+  "new_skip": 8375,
+  "old_index": 21681,
   "new_cap_used": true,
-  "run_id": "45971239256",
-  "old_name": "crates/rbitcoin-store/src/idx_body_pipeline.rs:60:9: replace IdxBodyJob::from_fk -> Option<Self> with None",
+  "run_id": "46126084283",
+  "old_name": "crates/rbitcoin-store/src/index_build_uring.rs:74:9: replace IndexWindow::outs -> Option<&[OutputRecord]> with None",
   "new_len": 9108,
-  "new_remaining": 1223,
-  "completed_new": 0,
-  "completed_old": 660,
+  "new_remaining": 733,
+  "completed_new": 490,
+  "completed_old": 152,
   "old_len": 27755,
-  "old_remaining": 27095
+  "old_remaining": 27603
 }
